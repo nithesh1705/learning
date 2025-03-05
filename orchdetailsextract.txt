@@ -1,0 +1,105 @@
+import requests
+import json
+
+# UiPath Orchestrator API Details
+ORCHESTRATOR_URL = "https://your_orchestrator_url"
+AUTH_TOKEN = "your_access_token"
+
+# Mapping of Hostnames to Host Identities
+HOST_DATA = {
+    "APP-PRO-UIBOT1": ["GEUIRUN1", "GEUIRUN3", "GEUIRUN5"],
+    "APP-PRO-UIBOT2": ["GEUIRUN1", "GEUIRUN3", "GEUIRUN5"],
+    "APP-PRO-UIBOT3": ["GEUIRUN2", "GEUIRUN4", "GEUIRUN8"],
+    "APP-PRO-UIBOT4": ["GEUIRUN2", "GEUIRUN4", "GEUIRUN8"],
+    "APP-PRO-UIBOT5": ["GEUIRUN10"],
+    "APP-PRO-UIBOT6": ["GEUIRUN6"],
+    "APP-PRO-UIBOT7": ["GEUIRUN7"],
+    "APP-PRO-UIBOT8": ["GEUIRUN9"]
+}
+
+# Function to fetch running jobs from Orchestrator
+def get_running_jobs():
+    url = f"{ORCHESTRATOR_URL}/odata/Jobs?$filter=State eq 'Running'"
+    headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        return response.json().get("value", [])
+    else:
+        print("Failed to fetch running jobs:", response.text)
+        return []
+
+# Function to get folders & processes for a selected hostname
+def get_data_by_hostname(hostname):
+    host_identities = HOST_DATA.get(hostname, [])
+    running_jobs = get_running_jobs()
+    
+    matching_folders_processes = set()
+
+    for job in running_jobs:
+        if job.get("HostMachineName") == hostname:
+            folder_name = job.get("FolderName", "Unknown Folder")
+            process_name = job.get("ReleaseName", "Unknown Process")
+            matching_folders_processes.add((folder_name, process_name))
+
+    return list(matching_folders_processes)
+
+# Function to get folders & processes for a selected host identity
+def get_data_by_host_identity(host_identity):
+    running_jobs = get_running_jobs()
+
+    matching_folders_processes = set()
+
+    for job in running_jobs:
+        if job.get("HostIdentity") == host_identity:
+            folder_name = job.get("FolderName", "Unknown Folder")
+            process_name = job.get("ReleaseName", "Unknown Process")
+            matching_folders_processes.add((folder_name, process_name))
+
+    return list(matching_folders_processes)
+
+# Function to get all data for provided folder IDs
+def get_general_data(folder_ids):
+    running_jobs = get_running_jobs()
+
+    matching_folders_processes = set()
+
+    for job in running_jobs:
+        if job.get("FolderId") in folder_ids:
+            folder_name = job.get("FolderName", "Unknown Folder")
+            process_name = job.get("ReleaseName", "Unknown Process")
+            matching_folders_processes.add((folder_name, process_name))
+
+    return list(matching_folders_processes)
+
+# User Input Section
+def main():
+    print("Select an option:")
+    print("1. Get data based on Hostname")
+    print("2. Get data based on Host Identity")
+    print("3. Get General Data (All Data for Provided Folder IDs)")
+
+    choice = input("Enter your choice (1/2/3): ")
+
+    if choice == "1":
+        print("Available Hostnames:", list(HOST_DATA.keys()))
+        hostname = input("Enter the Hostname: ")
+        result = get_data_by_hostname(hostname)
+    elif choice == "2":
+        all_identities = set([id for ids in HOST_DATA.values() for id in ids])
+        print("Available Host Identities:", all_identities)
+        host_identity = input("Enter the Host Identity: ")
+        result = get_data_by_host_identity(host_identity)
+    elif choice == "3":
+        folder_ids = input("Enter Folder IDs (comma-separated): ").split(",")
+        folder_ids = [int(f.strip()) for f in folder_ids]  # Convert to integer list
+        result = get_general_data(folder_ids)
+    else:
+        print("Invalid choice")
+        return
+    
+    print("\nActive Folders and Processes:")
+    print(json.dumps(result, indent=4))
+
+if __name__ == "__main__":
+    main()
