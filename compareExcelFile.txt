@@ -1,0 +1,44 @@
+import pandas as pd
+import openpyxl
+from openpyxl.styles import Font, PatternFill
+
+def compare_excel_files(file1, file2, output_file):
+    wb1 = openpyxl.load_workbook(file1)
+    wb2 = openpyxl.load_workbook(file2)
+    
+    with open(output_file, "w", encoding="utf-8") as f:
+        for sheet_name in wb1.sheetnames:
+            if sheet_name not in wb2.sheetnames:
+                f.write(f"Sheet '{sheet_name}' not found in {file2}\n")
+                continue
+            
+            sheet1 = wb1[sheet_name]
+            sheet2 = wb2[sheet_name]
+            
+            max_row = max(sheet1.max_row, sheet2.max_row)
+            max_col = max(sheet1.max_column, sheet2.max_column)
+            
+            for row in range(1, max_row + 1):
+                for col in range(1, max_col + 1):
+                    cell1 = sheet1.cell(row, col)
+                    cell2 = sheet2.cell(row, col)
+                    
+                    value1 = cell1.value if cell1.value is not None else ""
+                    value2 = cell2.value if cell2.value is not None else ""
+                    
+                    if value1 != value2:
+                        f.write(f"Mismatch in {sheet_name} at ({row}, {col}): '{value1}' != '{value2}'\n")
+                    
+                    if cell1.font.bold != cell2.font.bold:
+                        f.write(f"Bold format mismatch in {sheet_name} at ({row}, {col})\n")
+                    
+                    if cell1.fill.start_color.index != cell2.fill.start_color.index:
+                        f.write(f"Cell color mismatch in {sheet_name} at ({row}, {col})\n")
+    
+    print(f"Comparison completed. Check {output_file} for details.")
+
+# Usage
+file1 = "file1.xlsx"
+file2 = "file2.xlsx"
+output_file = "comparison_results.txt"
+compare_excel_files(file1, file2, output_file)
