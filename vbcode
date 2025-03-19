@@ -1,0 +1,25 @@
+Dim processes As Process() = Process.GetProcessesByName("EXCEL")
+
+For Each process As Process In processes
+    Try
+        ' Get the process owner (username)
+        Dim query As String = "SELECT * FROM Win32_Process WHERE ProcessId = " & process.Id
+        Dim searcher As New System.Management.ManagementObjectSearcher(query)
+        Dim processList As System.Management.ManagementObjectCollection = searcher.Get()
+
+        For Each obj As System.Management.ManagementObject In processList
+            Dim owner As String = ""
+            Dim domain As String = ""
+
+            ' Get the process owner
+            obj.InvokeMethod("GetOwner", (New String() {owner, domain}))
+
+            ' Check if the process belongs to the target user
+            If owner.ToLower() = targetUser.ToLower() Then
+                process.Kill()
+            End If
+        Next
+    Catch ex As Exception
+        ' Ignore errors (e.g., access denied)
+    End Try
+Next
