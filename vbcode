@@ -1,47 +1,62 @@
-' Arguments from UiPath
-Dim targetUser As String = in_TargetUser ' Pass this as an argument in UiPath
+Imports System.Diagnostics
+Imports System.Runtime.InteropServices
+Imports System.Management
 
-Dim excelProcesses As Process() = Process.GetProcessesByName("EXCEL")
+Try
+    ' Get the current username
+    Dim currentUser As String = Environment.UserName.ToLower()
 
-For Each process As Process In excelProcesses
+    ' Get all running Excel processes
+    For Each proc As Process In Process.GetProcessesByName("EXCEL")
+        Dim processUser As String = GetProcessUser(proc)
+
+        ' Close only the Excel processes belonging to the current user
+        If processUser.ToLower() = currentUser Then
+            CloseExcelWorkbooks(proc)
+        End If
+    Next
+Catch ex As Exception
+    ' Ignore if Excel is not running
+End Try
+
+' Function to get the username of a process
+Function GetProcessUser(proc As Process) As String
     Try
-        Dim query As String = "SELECT * FROM Win32_Process WHERE ProcessId = " & process.Id
-        Dim searcher As New System.Management.ManagementObjectSearcher(query)
-        Dim processList As System.Management.ManagementObjectCollection = searcher.Get()
+        Dim query As String = "SELECT * FROM Win32_Process WHERE ProcessId = " & proc.Id
+        Dim searcher As New Management.ManagementObjectSearcher(query)
+        Dim processList As Management.ManagementObjectCollection = searcher.Get()
 
-        For Each obj As System.Management.ManagementObject In processList
-            Dim owner As String = ""
-            Dim domain As String = ""
+        For Each obj As Management.ManagementObject In processList
+            Dim outParams As Object() = New Object(1) {}
+            Dim returnVal As Integer = Convert.ToInt32(obj.InvokeMethod("GetOwner", outParams))
 
-            obj.InvokeMethod("GetOwner", (New String() {owner, domain}))
-
-            ' Check if the process belongs to the target user
-            If owner.ToLower() = targetUser.ToLower() Then
-                ' Attach to Excel and close only .xls and .xlsx files
-                Dim excelApp As Object = Nothing
-                Try
-                    excelApp = System.Runtime.InteropServices.Marshal.GetActiveObject("Excel.Application")
-
-                    If excelApp IsNot Nothing AndAlso excelApp.Workbooks.Count > 0 Then
-                        For Each wb In excelApp.Workbooks
-                            Dim fileExtension As String = wb.FullName.ToLower()
-                            
-                            ' Check if file is .xls or .xlsx and close it
-                            If fileExtension.EndsWith(".xls") Or fileExtension.EndsWith(".xlsx") Then
-                                wb.Close(False) ' Close without saving
-                            End If
-                        Next
-                    End If
-                Catch ex As Exception
-                Finally
-                    ' Release Excel object to free memory
-                    If excelApp IsNot Nothing Then
-                        System.Runtime.InteropServices.Marshal.ReleaseComObject(excelApp)
-                        excelApp = Nothing
-                    End If
-                End Try
+            If returnVal = 0 Then
+                Return outParams(0).ToString() ' Return username
             End If
         Next
     Catch ex As Exception
+        Return ""
     End Try
-Next
+
+    Return ""
+End Function
+
+' Function to close only .xls and .xlsx files
+Sub CloseExcelWorkbooks(proc As Process)
+    Try
+        ' Get the running Excel instance
+        Dim excelApp As Object = Marshal.GetActiveObject("Excel.Application")
+        
+        ' Loop through open workbooks
+        For Each wb In excelApp.Workbooks
+            Dim fileName As String = wb.FullName.ToLower()
+
+            ' Check if the file is .xls or .xlsx and close it
+            If fileName.EndsWith(".xls") Or fileName.EndsWith(".xlsx") Then
+                wb.Close(False) ' Close without saving
+            End If
+        Next
+    Catch
+        ' Ignore any errors
+    End Try
+End Sub
