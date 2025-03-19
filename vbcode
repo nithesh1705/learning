@@ -1,8 +1,10 @@
-Dim processes As Process() = Process.GetProcessesByName("EXCEL")
+' Arguments from UiPath
+Dim targetUser As String = in_TargetUser ' Pass this as an argument in UiPath
 
-For Each process As Process In processes
+Dim excelProcesses As Process() = Process.GetProcessesByName("EXCEL")
+
+For Each process As Process In excelProcesses
     Try
-        ' Get the process owner (username)
         Dim query As String = "SELECT * FROM Win32_Process WHERE ProcessId = " & process.Id
         Dim searcher As New System.Management.ManagementObjectSearcher(query)
         Dim processList As System.Management.ManagementObjectCollection = searcher.Get()
@@ -11,15 +13,35 @@ For Each process As Process In processes
             Dim owner As String = ""
             Dim domain As String = ""
 
-            ' Get the process owner
             obj.InvokeMethod("GetOwner", (New String() {owner, domain}))
 
             ' Check if the process belongs to the target user
             If owner.ToLower() = targetUser.ToLower() Then
-                process.Kill()
+                ' Attach to Excel and close only .xls and .xlsx files
+                Dim excelApp As Object = Nothing
+                Try
+                    excelApp = System.Runtime.InteropServices.Marshal.GetActiveObject("Excel.Application")
+
+                    If excelApp IsNot Nothing AndAlso excelApp.Workbooks.Count > 0 Then
+                        For Each wb In excelApp.Workbooks
+                            Dim fileExtension As String = wb.FullName.ToLower()
+                            
+                            ' Check if file is .xls or .xlsx and close it
+                            If fileExtension.EndsWith(".xls") Or fileExtension.EndsWith(".xlsx") Then
+                                wb.Close(False) ' Close without saving
+                            End If
+                        Next
+                    End If
+                Catch ex As Exception
+                Finally
+                    ' Release Excel object to free memory
+                    If excelApp IsNot Nothing Then
+                        System.Runtime.InteropServices.Marshal.ReleaseComObject(excelApp)
+                        excelApp = Nothing
+                    End If
+                End Try
             End If
         Next
     Catch ex As Exception
-        ' Ignore errors (e.g., access denied)
     End Try
 Next
