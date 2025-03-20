@@ -1,0 +1,31 @@
+import psutil
+import os
+
+def find_process_using_file(file_path):
+    """Finds the process using the given file, filtered by the current user."""
+    current_user = os.environ.get("USERNAME")  # Get current Windows username
+    file_path = os.path.abspath(file_path).lower()  # Normalize file path
+
+    for process in psutil.process_iter(['pid', 'name', 'open_files', 'username']):
+        try:
+            if process.info['open_files'] and process.info['username'] == current_user:
+                for f in process.info['open_files']:
+                    if f.path.lower() == file_path:
+                        return process.info['pid'], process.info['name']
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return None, None
+
+def kill_process_using_file(file_path):
+    """Finds and kills the process holding the file, but only if it belongs to the current user."""
+    pid, process_name = find_process_using_file(file_path)
+    if pid:
+        print(f"Killing process '{process_name}' (PID: {pid}) of user '{os.environ.get('USERNAME')}' holding the file: {file_path}")
+        psutil.Process(pid).terminate()
+        print("Process terminated successfully.")
+    else:
+        print("No process of the current user is holding the file.")
+
+# Example Usage
+file_path = r"C:\Users\YourUsername\Documents\example.xlsx"  # Replace with your actual Excel file path
+kill_process_using_file(file_path)
