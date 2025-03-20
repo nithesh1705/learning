@@ -1,20 +1,45 @@
 import psutil
 import os
+import time
+import win32com.client
 
-# Replace with the username of the user whose Excel processes you want to kill
+# Replace with the username of the user whose Excel processes you want to close
 target_user = "username"  # Example: 'JohnDoe'
 
-# Function to kill Excel processes for a specific user
-def kill_excel_for_user(target_user):
+def close_excel_for_user(target_user):
+    try:
+        # Connect to running Excel applications
+        excel_app = win32com.client.Dispatch("Excel.Application")
+        if excel_app.Workbooks.Count > 0:
+            for wb in excel_app.Workbooks:
+                print(f"Saving and closing: {wb.Name}")
+                wb.Save()  # Save workbook
+                wb.Close(SaveChanges=True)  # Close workbook properly
+        
+        # Quit Excel properly
+        excel_app.Quit()
+        time.sleep(2)  # Give it some time to close
+
+    except Exception as e:
+        print(f"Error while closing Excel: {e}")
+
+def kill_excel_process(target_user):
     for proc in psutil.process_iter(['pid', 'name', 'username']):
         try:
-            # Check if process name is Excel and if it belongs to the target user
+            # Check if the process is Excel and belongs to the target user
             if 'excel' in proc.info['name'].lower() and proc.info['username'] == target_user:
                 print(f"Killing Excel process with PID: {proc.info['pid']} (User: {target_user})")
-                proc.kill()
+                proc.terminate()  # Try to close gracefully
+                time.sleep(2)  # Wait before force killing
+                if proc.is_running():
+                    proc.kill()  # Force kill if still running
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            # Handle cases where the process is terminated or inaccessible
-            pass
+            pass  # Ignore errors if the process is already gone or inaccessible
 
-# Call the function
-kill_excel_for_user(target_user)
+# Close Excel workbooks first
+close_excel_for_user(target_user)
+
+# Kill remaining Excel processes
+kill_excel_process(target_user)
+
+print("Excel processes closed successfully.")
