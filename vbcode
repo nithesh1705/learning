@@ -1,62 +1,47 @@
-Imports System.Diagnostics
-Imports System.Runtime.InteropServices
-Imports System.Management
-
 Try
-    ' Get the current username
-    Dim currentUser As String = Environment.UserName.ToLower()
+    ' Define the specific file name that appears in Task Manager
+    Dim targetFile As String = "FinalUpdationReport - Excel"
 
     ' Get all running Excel processes
-    For Each proc As Process In Process.GetProcessesByName("EXCEL")
-        Dim processUser As String = GetProcessUser(proc)
+    Dim processes As System.Diagnostics.Process() = System.Diagnostics.Process.GetProcessesByName("EXCEL")
 
-        ' Close only the Excel processes belonging to the current user
-        If processUser.ToLower() = currentUser Then
-            CloseExcelWorkbooks(proc)
+    ' Loop through running Excel processes
+    For Each process As System.Diagnostics.Process In processes
+        ' Check if the process title matches the specific file
+        If process.MainWindowTitle.Contains(targetFile) Then
+            ' Try to close Excel properly using Interop
+            Dim excelApp As Object = Nothing
+            Try
+                excelApp = GetObject(, "Excel.Application") ' Get active Excel instance
+                If Not excelApp Is Nothing Then
+                    Dim wb As Object = Nothing
+                    ' Loop through open workbooks
+                    For Each wb In excelApp.Workbooks
+                        If wb.Name.Contains("FinalUpdationReport") Then
+                            wb.Save() ' Save the file
+                            wb.Close(False) ' Close without asking to save
+                        End If
+                    Next
+                End If
+            Catch ex As Exception
+                ' Ignore error if GetObject fails
+            Finally
+                ' Release COM objects
+                If Not excelApp Is Nothing Then
+                    excelApp.Quit()
+                    System.Runtime.InteropServices.Marshal.ReleaseComObject(excelApp)
+                End If
+            End Try
+
+            ' If still running, force kill as a last resort
+            If Not process.HasExited Then
+                process.Kill()
+                process.WaitForExit()
+            End If
+
+            Exit For ' Exit loop after closing the required file
         End If
     Next
 Catch ex As Exception
-    ' Ignore if Excel is not running
+    ' Ignore errors
 End Try
-
-' Function to get the username of a process
-Function GetProcessUser(proc As Process) As String
-    Try
-        Dim query As String = "SELECT * FROM Win32_Process WHERE ProcessId = " & proc.Id
-        Dim searcher As New Management.ManagementObjectSearcher(query)
-        Dim processList As Management.ManagementObjectCollection = searcher.Get()
-
-        For Each obj As Management.ManagementObject In processList
-            Dim outParams As Object() = New Object(1) {}
-            Dim returnVal As Integer = Convert.ToInt32(obj.InvokeMethod("GetOwner", outParams))
-
-            If returnVal = 0 Then
-                Return outParams(0).ToString() ' Return username
-            End If
-        Next
-    Catch ex As Exception
-        Return ""
-    End Try
-
-    Return ""
-End Function
-
-' Function to close only .xls and .xlsx files
-Sub CloseExcelWorkbooks(proc As Process)
-    Try
-        ' Get the running Excel instance
-        Dim excelApp As Object = Marshal.GetActiveObject("Excel.Application")
-        
-        ' Loop through open workbooks
-        For Each wb In excelApp.Workbooks
-            Dim fileName As String = wb.FullName.ToLower()
-
-            ' Check if the file is .xls or .xlsx and close it
-            If fileName.EndsWith(".xls") Or fileName.EndsWith(".xlsx") Then
-                wb.Close(False) ' Close without saving
-            End If
-        Next
-    Catch
-        ' Ignore any errors
-    End Try
-End Sub
