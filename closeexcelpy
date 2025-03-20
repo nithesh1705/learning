@@ -1,0 +1,20 @@
+import psutil
+import os
+
+# Replace with the username of the user whose Excel processes you want to kill
+target_user = "username"  # Example: 'JohnDoe'
+
+# Function to kill Excel processes for a specific user
+def kill_excel_for_user(target_user):
+    for proc in psutil.process_iter(['pid', 'name', 'username']):
+        try:
+            # Check if process name is Excel and if it belongs to the target user
+            if 'excel' in proc.info['name'].lower() and proc.info['username'] == target_user:
+                print(f"Killing Excel process with PID: {proc.info['pid']} (User: {target_user})")
+                proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            # Handle cases where the process is terminated or inaccessible
+            pass
+
+# Call the function
+kill_excel_for_user(target_user)
