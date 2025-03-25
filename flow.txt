@@ -1,0 +1,123 @@
+START BOT
+
+DEFINE CONSTANTS:
+    - websiteURL = "https://ftp-website.com"
+    - username = <Account-specific username>
+    - password = <Account-specific password>
+    - trackingFilePath = "C:\BotData\DownloadedFiles.xlsx"
+
+INITIALIZE VARIABLES:
+    - retryOverallLogin = 0
+    - retryLogin = 0
+    - downloadedFiles = []  # Temporary list for current session
+    - totalRetriesAllowed = 3
+
+DO
+    retryLogin = 0
+    DO
+        OPEN Chrome Browser
+        NAVIGATE to websiteURL
+        WAIT for page to load
+        
+        MOVE .eml files from Main Folder to Process Folder
+        
+        ENTER username
+        ENTER password
+        CLICK Login button
+        
+        WAIT for OTP email (max 10 minutes)
+        
+        IF .eml file (OTP email) NOT received in 10 minutes:
+            CLOSE browser
+            retryLogin += 1
+        ELSE:
+            EXTRACT OTP from .eml file
+            BREAK
+    WHILE retryLogin < 3
+    
+    IF retryLogin >= 3:
+        SEND EMAIL → "Login failed due to OTP timeout"
+        STOP BOT
+    ELSE:
+        ENTER OTP in website
+        CLICK Login button
+        
+        WAIT for Dashboard
+        
+        IF login page appears again:
+            CLOSE browser
+            retryOverallLogin += 1
+        ELSE IF dashboardSelector PRESENT:
+            LOG: "Login Success"
+            BREAK
+        ELSE:
+            CLOSE browser
+            retryOverallLogin += 1
+WHILE retryOverallLogin < 3
+
+IF retryOverallLogin >= 3:
+    SEND EMAIL → "Login failed after multiple attempts"
+    STOP BOT
+
+----------------------
+# **🔹 File Processing Logic**
+----------------------
+NAVIGATE to file download page
+WAIT for page to load
+
+FOR currentPage = 1 TO lastPage:
+    WAIT for page to load
+    
+    FOR EACH row in the current page (500 rows):
+        EXTRACT file name → ARN_Number_AccountUser_Timestamp
+        
+        IF file belongs to current bot's accountUserName:
+            OPEN DownloadedFiles.xlsx
+            CHECK if file name exists in Excel
+            
+            IF file exists:
+                DELETE file from website
+            ELSE:
+                DOWNLOAD file
+                APPEND file name to Excel
+                DELETE file from website
+    END FOR
+    
+    CLICK "Next Page" button
+END FOR
+
+# **Reverse Traversal to Ensure No Missed Files**
+FOR currentPage = lastPage TO 1 STEP -1:
+    WAIT for page to load
+    
+    FOR EACH row in the current page (500 rows):
+        EXTRACT file name → ARN_Number_AccountUser_Timestamp
+        
+        IF file belongs to current bot's accountUserName:
+            OPEN DownloadedFiles.xlsx
+            CHECK if file name exists in Excel
+            
+            IF file exists:
+                DELETE file from website
+            ELSE:
+                DOWNLOAD file
+                APPEND file name to Excel
+                DELETE file from website
+    END FOR
+    
+    CLICK "Previous Page" button
+END FOR
+
+----------------------
+# **🔹 Final Steps**
+----------------------
+CLOSE browser
+
+IF all files processed successfully:
+    SEND EMAIL → "Process completed successfully!"
+ELSE IF system error occurred:
+    SEND EMAIL → "System Exception: Bot encountered an error!"
+ELSE IF business rule failure (invalid file format, etc.):
+    SEND EMAIL → "Business Exception: Invalid file found!"
+
+STOP BOT
