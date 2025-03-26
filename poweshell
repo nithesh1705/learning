@@ -1,0 +1,36 @@
+$rresponse = ""
+
+$body = @{
+    cinfo = @{
+        name = "Nifty GS 10Y"
+        startDate = "01-Feb-2025"
+        endDate = "26-Mar-2025"
+        indexName = "Nifty 10 yr Benchmark G-Sec"
+    }
+} | ConvertTo-Json -Compress
+
+$uri = "https://www.niftyindices.com/Backpage.aspx/getHistoricaldatatabletoString"
+
+$TimeoutSec = 60
+
+$headers = @{
+    "Host" = "www.niftyindices.com"
+    "Origin" = "https://www.niftyindices.com"
+    "Referer" = "https://www.niftyindices.com/reports/historical-data"
+    "Accept" = "application/json, text/javascript, */*; q=0.01"
+    "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Safari/537.36"
+}
+
+# Initialize session
+$websession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+
+# Sending the request
+$response = Invoke-RestMethod -Uri $uri -WebSession $websession -Proxy "http://10.16.36.82:8080" -ProxyUseDefaultCredentials -Method POST -Body $body -ContentType 'application/json' -TimeoutSec $TimeoutSec -Headers $headers
+
+# Ensure output directory exists
+$outputPath = "D:\BotFiles\NSE BSE Benchmark\NSE Output Files\Json\Output.json"
+$outputDir = Split-Path -Path $outputPath -Parent
+If (!(Test-Path -Path $outputDir)) { New-Item -ItemType Directory -Path $outputDir -Force }
+
+# Save response to file
+$response | ConvertTo-Json | Out-File -FilePath $outputPath
