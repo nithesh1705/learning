@@ -1,0 +1,44 @@
+import os
+import shutil
+import winreg
+
+def get_chrome_path():
+    """Find the Chrome installation path dynamically for Windows."""
+    
+    # Check common installation paths
+    possible_paths = [
+        os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
+        os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
+        os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe"),
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path  # Found Chrome
+    
+    # Check Windows Registry for custom installations
+    try:
+        reg_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path) as reg_key:
+            chrome_path, _ = winreg.QueryValueEx(reg_key, "")
+            if os.path.exists(chrome_path):
+                return chrome_path
+    except FileNotFoundError:
+        pass  # Chrome not found in registry
+
+    # Last fallback: Check if Chrome is in the system's PATH
+    chrome_path = shutil.which("chrome") or shutil.which("chrome.exe")
+    if chrome_path:
+        return chrome_path
+
+    return None  # Chrome not found
+
+def main():
+    chrome_path = get_chrome_path()
+    if not chrome_path:
+        print("🚨 Chrome is not installed. Please install Google Chrome and try again.")
+    else:
+        print(f"✅ Chrome found at: {chrome_path}")
+
+if __name__ == "__main__":
+    main()
