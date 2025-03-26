@@ -25,12 +25,25 @@ $headers = @{
 $websession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 
 # Sending the request
-$response = Invoke-RestMethod -Uri $uri -WebSession $websession -Proxy "http://10.16.36.82:8080" -ProxyUseDefaultCredentials -Method POST -Body $body -ContentType 'application/json' -TimeoutSec $TimeoutSec -Headers $headers
+try {
+    $response = Invoke-RestMethod -Uri $uri -WebSession $websession -Proxy "http://10.16.36.82:8080" -ProxyUseDefaultCredentials -Method POST -Body $body -ContentType 'application/json' -TimeoutSec $TimeoutSec -Headers $headers
 
-# Ensure output directory exists
-$outputPath = "D:\BotFiles\NSE BSE Benchmark\NSE Output Files\Json\Output.json"
-$outputDir = Split-Path -Path $outputPath -Parent
-If (!(Test-Path -Path $outputDir)) { New-Item -ItemType Directory -Path $outputDir -Force }
+    # Print Response Content
+    Write-Host "Response Content:"
+    Write-Host $response | ConvertTo-Json
 
-# Save response to file
-$response | ConvertTo-Json | Out-File -FilePath $outputPath
+    # Save response to file
+    $outputPath = "D:\BotFiles\NSE BSE Benchmark\NSE Output Files\Json\Output.json"
+    $outputDir = Split-Path -Path $outputPath -Parent
+    If (!(Test-Path -Path $outputDir)) { New-Item -ItemType Directory -Path $outputDir -Force }
+
+    $response | ConvertTo-Json | Out-File -FilePath $outputPath
+
+    # Print Success Status
+    Write-Host "Request Successful! JSON response saved to: $outputPath"
+
+} catch {
+    # Print Error Message
+    Write-Host "Request Failed! Status Code: $($_.Exception.Response.StatusCode.Value__)"
+    Write-Host "Error Message: $($_.Exception.Message)"
+}
