@@ -1,0 +1,29 @@
+import re
+import pandas as pd
+
+# Read the text file
+file_path = "pms html.txt"  # Change this to your actual file path
+with open(file_path, "r", encoding="utf-8") as file:
+    data = file.readlines()
+
+# Regular expression to extract option values
+pattern = re.compile(r'<option value="([^"]+)">([^<]+)</option>')
+
+# Extracted data
+rows = []
+
+for line in data:
+    match = pattern.search(line)
+    if match:
+        long_string = match.group(1)  # Value inside the option
+        short_string = match.group(2)  # Displayed text
+        rows.append([short_string, long_string])
+
+# Convert to DataFrame
+df = pd.DataFrame(rows, columns=["Short String", "Long String"])
+
+# Save to Excel
+output_path = "output.xlsx"
+df.to_excel(output_path, index=False)
+
+print(f"Excel file saved as {output_path}")
