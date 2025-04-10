@@ -1,51 +1,43 @@
 from bs4 import BeautifulSoup
 import pandas as pd
-from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 
-# Load the HTML
+# Load your HTML file
 with open("your_file.html", "r", encoding="utf-8") as file:
     soup = BeautifulSoup(file, "html.parser")
 
-# Extract content in order
+# Tags to extract in order
 tags_to_extract = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'li', 'table']
 rows_to_write = []
 
 for tag in soup.find_all(tags_to_extract, recursive=True):
     if tag.name == "table":
-        # Parse table into DataFrame
-        data = []
+        table_data = []
         for row in tag.find_all("tr"):
             cols = [col.get_text(strip=True) for col in row.find_all(['th', 'td'])]
-            data.append(cols)
-        df_table = pd.DataFrame(data)
+            table_data.append(cols)
+        df_table = pd.DataFrame(table_data)
         rows_to_write.append(df_table)
-        rows_to_write.append("")  # Add empty row after table
+        rows_to_write.append("")  # Add spacing
     else:
         text = tag.get_text(strip=True)
         if text:
-            rows_to_write.append([text])  # Store as a single-column row
+            rows_to_write.append([text])  # Wrap in list to write as one row
 
-# Create an Excel writer
+# Create the Excel writer
 with pd.ExcelWriter("structured_html_output.xlsx", engine="openpyxl") as writer:
-    sheetname = "HTML Content"
-    pd.DataFrame().to_excel(writer, sheet_name=sheetname, index=False)  # Create sheet
-    writer.book = writer.book
-    writer.sheets = {ws.title: ws for ws in writer.book.worksheets}
-    ws = writer.sheets[sheetname]
+    sheet_name = "HTML Content"
+    pd.DataFrame().to_excel(writer, sheet_name=sheet_name, index=False)  # Blank start
+    ws = writer.book[sheet_name]
 
-    # Write each item
-    row_idx = 1
+    # Append each block
     for item in rows_to_write:
         if isinstance(item, pd.DataFrame):
-            for r in dataframe_to_rows(item, index=False, header=True):
-                ws.append(r)
-                row_idx += 1
+            for row in dataframe_to_rows(item, index=False, header=True):
+                ws.append(row)
         elif isinstance(item, list):
             ws.append(item)
-            row_idx += 1
         elif isinstance(item, str) and item == "":
             ws.append([])
-            row_idx += 1
 
-print("✅ Structured Excel created with proper tables and content!")
+print("✅ Done! Check 'structured_html_output.xlsx'")
