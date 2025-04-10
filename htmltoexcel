@@ -1,32 +1,51 @@
 from bs4 import BeautifulSoup
 import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
 
-# Load your HTML file
+# Load the HTML
 with open("your_file.html", "r", encoding="utf-8") as file:
     soup = BeautifulSoup(file, "html.parser")
 
-# Tags to preserve in sequence
+# Extract content in order
 tags_to_extract = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'li', 'table']
-
-# Store content in document order
-content = []
+rows_to_write = []
 
 for tag in soup.find_all(tags_to_extract, recursive=True):
     if tag.name == "table":
-        rows = tag.find_all("tr")
-        for row in rows:
-            cells = row.find_all(["th", "td"])
-            row_text = " | ".join(cell.get_text(strip=True) for cell in cells)
-            content.append({"Type": "table_row", "Content": row_text})
+        # Parse table into DataFrame
+        data = []
+        for row in tag.find_all("tr"):
+            cols = [col.get_text(strip=True) for col in row.find_all(['th', 'td'])]
+            data.append(cols)
+        df_table = pd.DataFrame(data)
+        rows_to_write.append(df_table)
+        rows_to_write.append("")  # Add empty row after table
     else:
         text = tag.get_text(strip=True)
-        if text:  # Skip empty tags
-            content.append({"Type": tag.name, "Content": text})
+        if text:
+            rows_to_write.append([text])  # Store as a single-column row
 
-# Convert to DataFrame
-df = pd.DataFrame(content)
+# Create an Excel writer
+with pd.ExcelWriter("structured_html_output.xlsx", engine="openpyxl") as writer:
+    sheetname = "HTML Content"
+    pd.DataFrame().to_excel(writer, sheet_name=sheetname, index=False)  # Create sheet
+    writer.book = writer.book
+    writer.sheets = {ws.title: ws for ws in writer.book.worksheets}
+    ws = writer.sheets[sheetname]
 
-# Export to Excel
-df.to_excel("html_content_in_order.xlsx", index=False)
+    # Write each item
+    row_idx = 1
+    for item in rows_to_write:
+        if isinstance(item, pd.DataFrame):
+            for r in dataframe_to_rows(item, index=False, header=True):
+                ws.append(r)
+                row_idx += 1
+        elif isinstance(item, list):
+            ws.append(item)
+            row_idx += 1
+        elif isinstance(item, str) and item == "":
+            ws.append([])
+            row_idx += 1
 
-print("✅ Excel file created in the same order as HTML.")
+print("✅ Structured Excel created with proper tables and content!")
