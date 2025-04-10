@@ -1,0 +1,32 @@
+from bs4 import BeautifulSoup
+import pandas as pd
+
+# Load your HTML file
+with open("your_file.html", "r", encoding="utf-8") as file:
+    soup = BeautifulSoup(file, "html.parser")
+
+# Tags to preserve in sequence
+tags_to_extract = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'li', 'table']
+
+# Store content in document order
+content = []
+
+for tag in soup.find_all(tags_to_extract, recursive=True):
+    if tag.name == "table":
+        rows = tag.find_all("tr")
+        for row in rows:
+            cells = row.find_all(["th", "td"])
+            row_text = " | ".join(cell.get_text(strip=True) for cell in cells)
+            content.append({"Type": "table_row", "Content": row_text})
+    else:
+        text = tag.get_text(strip=True)
+        if text:  # Skip empty tags
+            content.append({"Type": tag.name, "Content": text})
+
+# Convert to DataFrame
+df = pd.DataFrame(content)
+
+# Export to Excel
+df.to_excel("html_content_in_order.xlsx", index=False)
+
+print("✅ Excel file created in the same order as HTML.")
