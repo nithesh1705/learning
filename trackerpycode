@@ -54,18 +54,47 @@ def add_task(task):
     update_excel_tasks(today, tasks)
     print(f"✅ Task '{task}' added.")
 
-def remove_task(task):
+def remove_task():
     today = datetime.date.today().isoformat()
     tasks = get_tasks_for_date(today)
-    if task in tasks:
-        tasks.remove(task)
-        update_excel_tasks(today, tasks)
-        print(f"❌ Task '{task}' removed.")
-    else:
-        print(f"⚠️ Task '{task}' not found.")
+    if not tasks:
+        print("📭 No tasks to remove.")
+        return
 
-def mark_task_complete(task):
-    print(f"✅ Task '{task}' marked as completed.")  # No status tracking yet
+    print("\n🗑️ Choose a task to remove:")
+    for i, t in enumerate(tasks, 1):
+        print(f"{i}. {t}")
+
+    try:
+        choice = int(input("Enter task number: "))
+        if 1 <= choice <= len(tasks):
+            removed_task = tasks.pop(choice - 1)
+            update_excel_tasks(today, tasks)
+            print(f"❌ Task '{removed_task}' removed.")
+        else:
+            print("⚠️ Invalid choice.")
+    except ValueError:
+        print("⚠️ Invalid input.")
+
+def mark_task_complete():
+    today = datetime.date.today().isoformat()
+    tasks = get_tasks_for_date(today)
+    if not tasks:
+        print("📭 No tasks to mark as complete.")
+        return
+
+    print("\n✅ Choose a task to mark as completed:")
+    for i, t in enumerate(tasks, 1):
+        print(f"{i}. {t}")
+
+    try:
+        choice = int(input("Enter task number: "))
+        if 1 <= choice <= len(tasks):
+            print(f"✅ Task '{tasks[choice - 1]}' marked as completed.")  # Not saving status yet
+        else:
+            print("⚠️ Invalid choice.")
+    except ValueError:
+        print("⚠️ Invalid input.")
 
 def show_tasks_for_date(date_str):
     tasks = get_tasks_for_date(date_str)
@@ -75,6 +104,10 @@ def show_tasks_for_date(date_str):
             print(f" - {t}")
     else:
         print(f"❌ No tasks found for {date_str}.")
+
+def show_todays_tasks():
+    today = datetime.date.today().isoformat()
+    show_tasks_for_date(today)
 
 # --- Notification ---
 def notify_tasks():
@@ -98,8 +131,9 @@ def menu():
         print("1. Add Task")
         print("2. Remove Task")
         print("3. Mark Task as Completed")
-        print("4. Show Tasks for a Date")
-        print("5. Exit")
+        print("4. Show Tasks for a Specific Date")
+        print("5. Show Today's Tasks")
+        print("6. Exit")
 
         choice = input("Choose an option: ")
 
@@ -107,15 +141,15 @@ def menu():
             task = input("Enter the task: ")
             add_task(task)
         elif choice == '2':
-            task = input("Enter the task to remove: ")
-            remove_task(task)
+            remove_task()
         elif choice == '3':
-            task = input("Enter the task to mark as complete: ")
-            mark_task_complete(task)
+            mark_task_complete()
         elif choice == '4':
             date_str = input("Enter the date (YYYY-MM-DD): ")
             show_tasks_for_date(date_str)
         elif choice == '5':
+            show_todays_tasks()
+        elif choice == '6':
             print("👋 Exiting Assistant...")
             break
         else:
