@@ -7,51 +7,33 @@ from plyer import notification
 from openpyxl import Workbook, load_workbook
 from threading import Thread
 
-# File paths
 TRACKER_FILE = "daily_task_tracker.xlsx"
 
-# --- Ensure Excel Tracker Exists ---
+# Create workbook if not exists
 if not os.path.exists(TRACKER_FILE):
     wb = Workbook()
     ws = wb.active
     ws.title = "TaskTracker"
-    ws.append(["Date", "Tasks"])
+    ws.append(["Date", "Task", "Status"])  # New structure
     wb.save(TRACKER_FILE)
 
-# --- Sound Function ---
 def play_beep():
     if platform.system() == "Windows":
         import winsound
         winsound.MessageBeep()
     else:
-        print('\a')  # Bell for macOS/Linux
+        print('\a')
 
-# --- Excel Functions ---
 def get_tasks_for_date(date_str):
     wb = load_workbook(TRACKER_FILE)
     ws = wb.active
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if row[0] == date_str:
-            return row[1].split(', ') if row[1] else []
-    return []
+    return [(i + 2, row[1].value, row[2].value) for i, row in enumerate(ws.iter_rows(min_row=2)) if row[0].value == date_str]
 
-def update_excel_tasks(date_str, task_list):
+def add_task(task):
     wb = load_workbook(TRACKER_FILE)
     ws = wb.active
-    for row in ws.iter_rows(min_row=2):
-        if row[0].value == date_str:
-            row[1].value = ', '.join(task_list)
-            wb.save(TRACKER_FILE)
-            return
-    ws.append([date_str, ', '.join(task_list)])
+    ws.append([datetime.date.today().isoformat(), task, "Not Completed"])
     wb.save(TRACKER_FILE)
-
-# --- Task Functions ---
-def add_task(task):
-    today = datetime.date.today().isoformat()
-    tasks = get_tasks_for_date(today)
-    tasks.append(task)
-    update_excel_tasks(today, tasks)
     print(f"✅ Task '{task}' added.")
 
 def remove_task():
@@ -62,15 +44,18 @@ def remove_task():
         return
 
     print("\n🗑️ Choose a task to remove:")
-    for i, t in enumerate(tasks, 1):
-        print(f"{i}. {t}")
+    for i, (_, task, status) in enumerate(tasks, 1):
+        print(f"{i}. {task} ({status})")
 
     try:
         choice = int(input("Enter task number: "))
         if 1 <= choice <= len(tasks):
-            removed_task = tasks.pop(choice - 1)
-            update_excel_tasks(today, tasks)
-            print(f"❌ Task '{removed_task}' removed.")
+            row_index, task, _ = tasks[choice - 1]
+            wb = load_workbook(TRACKER_FILE)
+            ws = wb.active
+            ws.delete_rows(row_index)
+            wb.save(TRACKER_FILE)
+            print(f"❌ Task '{task}' removed.")
         else:
             print("⚠️ Invalid choice.")
     except ValueError:
@@ -79,18 +64,25 @@ def remove_task():
 def mark_task_complete():
     today = datetime.date.today().isoformat()
     tasks = get_tasks_for_date(today)
-    if not tasks:
+    incomplete_tasks = [t for t in tasks if t[2] != "Completed"]
+
+    if not incomplete_tasks:
         print("📭 No tasks to mark as complete.")
         return
 
     print("\n✅ Choose a task to mark as completed:")
-    for i, t in enumerate(tasks, 1):
-        print(f"{i}. {t}")
+    for i, (_, task, _) in enumerate(incomplete_tasks, 1):
+        print(f"{i}. {task}")
 
     try:
         choice = int(input("Enter task number: "))
-        if 1 <= choice <= len(tasks):
-            print(f"✅ Task '{tasks[choice - 1]}' marked as completed.")  # Not saving status yet
+        if 1 <= choice <= len(incomplete_tasks):
+            row_index, task, _ = incomplete_tasks[choice - 1]
+            wb = load_workbook(TRACKER_FILE)
+            ws = wb.active
+            ws[f"C{row_index}"].value = "Completed"
+            wb.save(TRACKER_FILE)
+            print(f"✅ Task '{task}' marked as completed.")
         else:
             print("⚠️ Invalid choice.")
     except ValueError:
@@ -98,33 +90,35 @@ def mark_task_complete():
 
 def show_tasks_for_date(date_str):
     tasks = get_tasks_for_date(date_str)
-    if tasks:
-        print(f"\n📅 Tasks for {date_str}:")
-        for t in tasks:
-            print(f" - {t}")
-    else:
+    if not tasks:
         print(f"❌ No tasks found for {date_str}.")
+        return
+
+    print(f"\n📅 Tasks for {date_str}:")
+    for _, task, status in tasks:
+        icon = "✅" if status == "Completed" else "🔸"
+        print(f"{icon} {task}")
 
 def show_todays_tasks():
     today = datetime.date.today().isoformat()
     show_tasks_for_date(today)
 
-# --- Notification ---
 def notify_tasks():
     today = datetime.date.today().isoformat()
     tasks = get_tasks_for_date(today)
-    if tasks:
-        task_str = "\n".join([f"- {t}" for t in tasks])
+    pending_tasks = [task for _, task, status in tasks if status != "Completed"]
+
+    if pending_tasks:
+        task_str = "\n".join([f"- {t}" for t in pending_tasks])
         notification.notify(
-            title="📝 Your Tasks for Today",
+            title="📝 Your Pending Tasks for Today",
             message=task_str,
             timeout=10
         )
         play_beep()
     else:
-        print("📭 No tasks to notify.")
+        print("🎉 All tasks completed! Nothing to notify.")
 
-# --- Menu UI ---
 def menu():
     while True:
         print("\n🛠️ Task Assistant Menu:")
@@ -155,18 +149,15 @@ def menu():
         else:
             print("❌ Invalid choice. Try again.")
 
-# --- Scheduler Setup ---
+# Scheduler
 schedule.every().hour.do(notify_tasks)
 
-# --- Start ---
 if __name__ == "__main__":
     print("📘 Daily Task Assistant is Running...")
 
-    # Run menu in separate thread
     menu_thread = Thread(target=menu)
     menu_thread.start()
 
-    # Main loop for scheduled tasks
     while True:
         schedule.run_pending()
         time.sleep(1)
