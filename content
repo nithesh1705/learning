@@ -1,14 +1,8 @@
-1- Demonstrated a proactive and problem-solving approach for production stability.
-2- Effectively engaged in daily coordination calls with Business Analysts, Scrum Master, and developers to ensure seamless workflow planning and execution. 
-3- Led migration activities, including UiPath version upgrade and HCL notes to Outlook
-4- Conducted technical interviews and played an active role in the hiring process to build a strong and capable RPA team
-
-
-1- Provided consistent guidance and support to developers, helping resolve their queries and reviewing their code for best practices.
-2- Actively participated in technical discussions, fostering a culture of knowledge sharing and continuous improvement 
-3- Collaborated with cross-functional teams, ensuring uninterrupted business operations
-
-
-1- Led the resolution of complex post-migration issues, contributing to minimal downtime and enhanced system reliability. 
-2- Reviewed and validated code developed by the team, driving quality and adherence to standards.
-3- Managed end-to-end deployment cycles, including UAT and Production rollouts, with a strong Focus on accuracy and timeliness
+%Y-%m-%dT%H:%M:%S.%fZ",       # ISO 8601 with microseconds and 'Z'
+    "%Y-%m-%dT%H:%M:%SZ",          # ISO 8601 without microseconds, with 'Z'
+    "%Y-%m-%dT%H:%M:%S.%f+00:00",  # ISO 8601 with offset (+00:00)
+    "%Y-%m-%dT%H:%M:%S+00:00",     # ISO 8601 without microseconds, offset
+    "%Y-%m-%dT%H:%M:%S.%f",        # ISO 8601 UTC without Z or offset
+    "%Y-%m-%dT%H:%M:%S",           # Basic datetime, no microseconds or offset
+    "%Y-%m-%d %H:%M:%S",           # Space-separated datetime
+    "%Y-%m-%d %H:%M:%S.%f"
