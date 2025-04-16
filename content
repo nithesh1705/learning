@@ -1,8 +1,15 @@
-%Y-%m-%dT%H:%M:%S.%fZ",       # ISO 8601 with microseconds and 'Z'
-    "%Y-%m-%dT%H:%M:%SZ",          # ISO 8601 without microseconds, with 'Z'
-    "%Y-%m-%dT%H:%M:%S.%f+00:00",  # ISO 8601 with offset (+00:00)
-    "%Y-%m-%dT%H:%M:%S+00:00",     # ISO 8601 without microseconds, offset
-    "%Y-%m-%dT%H:%M:%S.%f",        # ISO 8601 UTC without Z or offset
-    "%Y-%m-%dT%H:%M:%S",           # Basic datetime, no microseconds or offset
-    "%Y-%m-%d %H:%M:%S",           # Space-separated datetime
-    "%Y-%m-%d %H:%M:%S.%f"
+As part of the transition from the RPA team to the AI team, I’m working on understanding the current scope of work, approaches, and ongoing initiatives within the AI stream. To align myself effectively with the team’s direction and contribute meaningfully, I’m putting together an overview of the following aspects:
+
+The key use cases currently being handled by the AI team.
+
+The types of models used (pre-trained or custom-trained) and the tech stack involved.
+
+Whether the team focuses more on model development or solution integration.
+
+Any past or current POCs or projects that can serve as reference points.
+
+The process typically followed from ideation to solution deployment.
+
+Any documentation or internal references (solution designs, architecture, etc.) related to the above.
+
+This will help ensure I have a clear understanding of the existing work and can move forward with clarity and focus.
