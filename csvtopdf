@@ -1,55 +1,25 @@
 import pandas as pd
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer, Image
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import inch
-from reportlab.pdfgen import canvas
 
-# Input/output files
-input_excel = "ReportBrokerageSum.xlsx"  # Change this to your actual file name
-logo_path = "icici_logo.png"
-output_pdf = "Final_Brokerage_Summary.pdf"
+# Load Excel file
+df = pd.read_excel("ReportBrokerageSum.xlsx", header=None)
 
-# Load the Excel file
-df_full = pd.read_excel(input_excel, header=None)
+# Metadata
+title = df.iloc[0, 0]
+subtitle = df.iloc[1, 0]
+date_range = df.iloc[2, 0]
+fund_manager = df.iloc[3, 0]
 
-# Extract metadata
-title = df_full.iloc[0, 0]
-subtitle = df_full.iloc[1, 0]
-date_range = df_full.iloc[2, 0]
-fund_manager = df_full.iloc[3, 0]
+# Table headers and data
+headers = df.iloc[4].tolist()
+data = df.iloc[5:].dropna(how='all')
+table_data = [headers] + data.values.tolist()
 
-# Extract table header and data
-headers = df_full.iloc[4].tolist()  # Row 5
-data_rows = df_full.iloc[5:].dropna(how='all')  # From row 6 onwards
-
-# Create PDF document
-doc = SimpleDocTemplate(output_pdf, pagesize=A4,
-                        leftMargin=40, rightMargin=40,
-                        topMargin=100, bottomMargin=40)
-styles = getSampleStyleSheet()
-elements = []
-
-# Draw logo
-c = canvas.Canvas(output_pdf, pagesize=A4)
-c.drawImage(logo_path, 40, A4[1] - 80, width=1.5 * inch, height=0.75 * inch, mask='auto')
-c.save()
-
-# Add text
-elements.append(Paragraph(f"<b>{title}</b>", styles["Heading2"]))
-elements.append(Spacer(1, 8))
-elements.append(Paragraph(f"<b>{subtitle}</b>", styles["Heading2"]))
-elements.append(Spacer(1, 6))
-elements.append(Paragraph(date_range, styles["Normal"]))
-elements.append(Spacer(1, 6))
-elements.append(Paragraph(fund_manager, styles["Normal"]))
-elements.append(Spacer(1, 15))
-
-# Prepare table data
-table_data = [headers] + data_rows.values.tolist()
-
-# Format percentage columns
+# Format percent columns
 percent_cols = ["% Total", "% Total Business", "Average Rate of Brokerage"]
 for i, col in enumerate(headers):
     if col in percent_cols:
@@ -59,20 +29,46 @@ for i, col in enumerate(headers):
             except:
                 pass
 
-# Create table
-table = Table(table_data, repeatRows=1)
+# Setup PDF
+doc = SimpleDocTemplate("Final_Brokerage_Summary.pdf", pagesize=A4,
+                        leftMargin=40, rightMargin=40, topMargin=50, bottomMargin=30)
+
+styles = getSampleStyleSheet()
+centered = ParagraphStyle(name="Centered", parent=styles['Heading2'], alignment=1, fontSize=10, spaceAfter=6)
+
+elements = []
+
+# ICICI Logo (top-left)
+logo = Image("icici_logo.png", width=1.5 * inch, height=0.5 * inch)
+elements.append(logo)
+elements.append(Spacer(1, 10))
+
+# Company name and summary title
+elements.append(Paragraph(f"<b>{title}</b>", centered))
+elements.append(Paragraph(f"<b>{subtitle}</b>", centered))
+elements.append(Paragraph(f"<b>{date_range}</b>", centered))
+elements.append(Paragraph(f"<b>{fund_manager}</b>", centered))
+elements.append(Spacer(1, 10))
+
+# Table setup
+page_width = A4[0] - 80
+num_cols = len(headers)
+col_width = page_width / num_cols
+col_widths = [col_width] * num_cols
+
+table = Table(table_data, colWidths=col_widths, repeatRows=1)
+
 table.setStyle(TableStyle([
     ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-    ("GRID", (0, 0), (-1, -1), 0.25, colors.black),
-    ("FONTSIZE", (0, 0), (-1, -1), 7),
+    ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
     ("ALIGN", (0, 0), (-1, -1), "CENTER"),
     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ("FONTSIZE", (0, 0), (-1, -1), 6.5),
+    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
     ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ("TOPPADDING", (0, 0), (-1, -1), 3),
 ]))
 
 elements.append(table)
-
-# Build PDF
 doc.build(elements)
-print(f"✅ PDF successfully generated: {output_pdf}")
+print("✅ PDF generated matching expected format.")
