@@ -1,73 +1,78 @@
 import pandas as pd
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.units import inch
+from reportlab.pdfgen import canvas
 
-# === Step 1: Read CSV File ===
-csv_path = "your_file.csv"  # <-- Replace with your CSV path
+# Input/output files
+input_excel = "ReportBrokerageSum.xlsx"  # Change this to your actual file name
+logo_path = "icici_logo.png"
+output_pdf = "Final_Brokerage_Summary.pdf"
 
-with open(csv_path, 'r', encoding='utf-8') as f:
-    lines = [line.strip().strip(',') for line in f if line.strip()]
+# Load the Excel file
+df_full = pd.read_excel(input_excel, header=None)
 
-# Extract title and subheaders
-title_1 = lines[0]
-title_2 = lines[1]
-title_3 = lines[2]
-title_4 = lines[3]
+# Extract metadata
+title = df_full.iloc[0, 0]
+subtitle = df_full.iloc[1, 0]
+date_range = df_full.iloc[2, 0]
+fund_manager = df_full.iloc[3, 0]
 
-# Table starts after the first 4 lines
-header = lines[4].split(',')
-data_rows = [line.split(',') for line in lines[5:]]
+# Extract table header and data
+headers = df_full.iloc[4].tolist()  # Row 5
+data_rows = df_full.iloc[5:].dropna(how='all')  # From row 6 onwards
 
-# === Step 2: PDF Setup ===
-pdf_path = "BROKERAGE_SUMMARY_REPORT.pdf"
-doc = SimpleDocTemplate(pdf_path, pagesize=A4)
+# Create PDF document
+doc = SimpleDocTemplate(output_pdf, pagesize=A4,
+                        leftMargin=40, rightMargin=40,
+                        topMargin=100, bottomMargin=40)
+styles = getSampleStyleSheet()
 elements = []
 
-# Custom styles
-styles = getSampleStyleSheet()
+# Draw logo
+c = canvas.Canvas(output_pdf, pagesize=A4)
+c.drawImage(logo_path, 40, A4[1] - 80, width=1.5 * inch, height=0.75 * inch, mask='auto')
+c.save()
 
-centered_title = ParagraphStyle(name='centeredTitle', parent=styles['Title'], alignment=TA_CENTER, fontSize=14)
-centered_bold = ParagraphStyle(name='centeredBold', parent=styles['Heading3'], alignment=TA_CENTER, fontSize=12)
-centered_normal = ParagraphStyle(name='centeredNormal', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10)
+# Add text
+elements.append(Paragraph(f"<b>{title}</b>", styles["Heading2"]))
+elements.append(Spacer(1, 8))
+elements.append(Paragraph(f"<b>{subtitle}</b>", styles["Heading2"]))
+elements.append(Spacer(1, 6))
+elements.append(Paragraph(date_range, styles["Normal"]))
+elements.append(Spacer(1, 6))
+elements.append(Paragraph(fund_manager, styles["Normal"]))
+elements.append(Spacer(1, 15))
 
-# Add headers
-elements.append(Paragraph(title_1, centered_title))
-elements.append(Spacer(1, 6))
-elements.append(Paragraph(title_2, centered_bold))
-elements.append(Spacer(1, 6))
-elements.append(Paragraph(title_3, centered_normal))
-elements.append(Spacer(1, 6))
-elements.append(Paragraph(title_4, centered_normal))
-elements.append(Spacer(1, 12))
+# Prepare table data
+table_data = [headers] + data_rows.values.tolist()
 
-# === Step 3: Create Table ===
-table_data = [header] + data_rows
+# Format percentage columns
+percent_cols = ["% Total", "% Total Business", "Average Rate of Brokerage"]
+for i, col in enumerate(headers):
+    if col in percent_cols:
+        for row in table_data[1:]:
+            try:
+                row[i] = f"{float(str(row[i]).replace(',', '').strip()):.2f}%"
+            except:
+                pass
+
+# Create table
 table = Table(table_data, repeatRows=1)
-
-# === Step 4: Style the table ===
-table_style = TableStyle([
-    ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-    ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-    ('FONTSIZE', (0, 0), (-1, -1), 8),
-    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-    ('GRID', (0, 0), (-1, -1), 0.25, colors.black),
-])
-
-table.setStyle(table_style)
-
-# Optional: Add zebra striping
-for i in range(1, len(table_data)):
-    if i % 2 == 0:
-        bg_color = colors.whitesmoke
-        table.setStyle(TableStyle([('BACKGROUND', (0, i), (-1, i), bg_color)]))
+table.setStyle(TableStyle([
+    ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+    ("GRID", (0, 0), (-1, -1), 0.25, colors.black),
+    ("FONTSIZE", (0, 0), (-1, -1), 7),
+    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ("TOPPADDING", (0, 0), (-1, -1), 3),
+]))
 
 elements.append(table)
 
-# === Step 5: Build PDF ===
+# Build PDF
 doc.build(elements)
-print(f"✅ Final styled PDF saved as: {pdf_path}")
+print(f"✅ PDF successfully generated: {output_pdf}")
