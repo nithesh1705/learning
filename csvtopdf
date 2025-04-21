@@ -1,0 +1,67 @@
+import pandas as pd
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+
+# === Step 1: Read CSV and split title/header + data ===
+csv_path = "your_file.csv"  # Replace with your actual path
+
+with open(csv_path, 'r', encoding='utf-8') as f:
+    lines = [line.strip() for line in f if line.strip()]
+
+# First 4 lines are titles
+title_lines = lines[:4]
+
+# Next line is the header, remaining are data
+table_header = lines[4].split(',')
+table_data = [line.split(',') for line in lines[5:]]
+
+# === Step 2: Prepare PDF document ===
+pdf_path = "brokerage_summary.pdf"
+doc = SimpleDocTemplate(pdf_path, pagesize=A4)
+elements = []
+
+styles = getSampleStyleSheet()
+
+# Add title lines
+for line in title_lines:
+    if "summary" in line.lower():
+        style = styles['Heading3']
+    elif "from" in line.lower():
+        style = styles['Normal']
+    else:
+        style = styles['Heading2']
+    elements.append(Paragraph(line, style))
+    elements.append(Spacer(1, 6))
+
+elements.append(Spacer(1, 12))
+
+# === Step 3: Create Table ===
+data = [table_header] + table_data
+table = Table(data, repeatRows=1)
+
+# === Step 4: Styling ===
+style = TableStyle([
+    ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+    ('FONTSIZE', (0, 0), (-1, -1), 9),
+    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+    ('GRID', (0, 0), (-1, -1), 0.25, colors.black),
+])
+
+table.setStyle(style)
+
+# Zebra striping for better readability
+for i in range(1, len(data)):
+    if i % 2 == 0:
+        bg_color = colors.lightgrey
+        table.setStyle(TableStyle([('BACKGROUND', (0, i), (-1, i), bg_color)]))
+
+elements.append(table)
+
+# === Step 5: Build PDF ===
+doc.build(elements)
+print(f"✅ PDF successfully created at: {pdf_path}")
