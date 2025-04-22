@@ -1,74 +1,54 @@
-import pandas as pd
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer, Image
-from reportlab.lib.pagesizes import A4
+from reportlab.platypus import Table, TableStyle, Paragraph, Image, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
 from reportlab.lib.units import inch
 
-# Load Excel file
-df = pd.read_excel("ReportBrokerageSum.xlsx", header=None)
-
-# Metadata
-title = df.iloc[0, 0]
-subtitle = df.iloc[1, 0]
-date_range = df.iloc[2, 0]
-fund_manager = df.iloc[3, 0]
-
-# Table headers and data
-headers = df.iloc[4].tolist()
-data = df.iloc[5:].dropna(how='all')
-table_data = [headers] + data.values.tolist()
-
-# Format percent columns
-percent_cols = ["% Total", "% Total Business", "Average Rate of Brokerage"]
-for i, col in enumerate(headers):
-    if col in percent_cols:
-        for row in table_data[1:]:
-            try:
-                row[i] = f"{float(str(row[i]).replace(',', '').strip()):.2f}%"
-            except:
-                pass
-
-# Setup PDF
-doc = SimpleDocTemplate("Final_Brokerage_Summary.pdf", pagesize=A4,
-                        leftMargin=40, rightMargin=40, topMargin=50, bottomMargin=30)
-
 styles = getSampleStyleSheet()
-centered = ParagraphStyle(name="Centered", parent=styles['Heading2'], alignment=1, fontSize=10, spaceAfter=6)
 
-elements = []
+# Custom centered style
+centeredStyle = ParagraphStyle(
+    name="Centered",
+    parent=styles["Normal"],
+    alignment=1  # Center align text horizontally
+)
 
-# ICICI Logo (top-left)
-logo = Image("icici_logo.png", width=1.5 * inch, height=0.5 * inch)
-elements.append(logo)
-elements.append(Spacer(1, 10))
+# Left column: logo
+logo = Image(logoPath, width=1.5 * inch, height=0.5 * inch)
 
-# Company name and summary title
-elements.append(Paragraph(f"<b>{title}</b>", centered))
-elements.append(Paragraph(f"<b>{subtitle}</b>", centered))
-elements.append(Paragraph(f"<b>{date_range}</b>", centered))
-elements.append(Paragraph(f"<b>{fund_manager}</b>", centered))
-elements.append(Spacer(1, 10))
+# Right column: main text content block (centered vertically on page)
+text_data = [
+    Paragraph(f"<b>{title}</b>", centeredStyle),
+    Spacer(1, 6),
+    Paragraph(f"{subtitle}", centeredStyle),
+    Spacer(1, 6),
+    Paragraph(f"{dateRange}", centeredStyle),
+    Spacer(1, 6),
+    Paragraph(f"{fundManager}", centeredStyle)
+]
 
-# Table setup
-page_width = A4[0] - 80
-num_cols = len(headers)
-col_width = page_width / num_cols
-col_widths = [col_width] * num_cols
+# Estimate height of the content
+content_height = len(text_data) * 20  # adjust based on font size/spacing
+page_height = 11 * inch  # A4/Letter height
+vertical_space = max((page_height - content_height) / 2, 0)
 
-table = Table(table_data, colWidths=col_widths, repeatRows=1)
+# Add vertical Spacer before text to simulate vertical centering
+text_elements = [Spacer(1, vertical_space)] + text_data
 
-table.setStyle(TableStyle([
-    ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-    ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+# Make right side a vertical table
+right_block = Table([[item] for item in text_elements])
+right_block.setStyle(TableStyle([
     ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ("FONTSIZE", (0, 0), (-1, -1), 6.5),
-    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-    ("TOPPADDING", (0, 0), (-1, -1), 3),
+    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
 ]))
 
-elements.append(table)
-doc.build(elements)
-print("✅ PDF generated matching expected format.")
+# Combine logo and right block in two columns
+main_table = Table([[logo, right_block]], colWidths=[1.7 * inch, 4.8 * inch])
+main_table.setStyle(TableStyle([
+    ("VALIGN", (0, 0), (0, 0), "TOP"),     # Logo top-aligned
+    ("VALIGN", (1, 0), (1, 0), "TOP")      # Right block already centered with Spacer
+]))
+
+# Add to PDF
+elements.append(main_table)
+elements.append(Spacer(1, 10))
