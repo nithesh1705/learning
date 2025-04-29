@@ -1,64 +1,17 @@
-import os
-import uuid
-import requests
 from office365.sharepoint.client_context import ClientContext
-from office365.runtime.auth.authentication_context import AuthenticationContext
+from office365.runtime.auth.client_credential import ClientCredential
 
-# Configuration
 site_url = "https://yourtenant.sharepoint.com/sites/yoursite"
-username = "your_email@yourtenant.com"
-password = "your_password"
-local_folder = r"C:\path\to\your\folder"
+client_id = "your-client-id"
+client_secret = "your-client-secret"
 target_folder_url = "/sites/yoursite/Shared Documents/YourFolder"
-chunk_size = 10 * 1024 * 1024  # 10 MB
+local_file_path = r"C:\path\to\your\file.txt"
 
-# Step 1: Create proxy-enabled session
-proxy_dict = {
-    "http": "http://your_proxy:port",
-    "https": "http://your_proxy:port"
-}
-session = requests.Session()
-session.proxies.update(proxy_dict)
+ctx = ClientContext(site_url).with_credentials(ClientCredential(client_id, client_secret))
+target_folder = ctx.web.get_folder_by_server_relative_url(target_folder_url)
 
-# Step 2: Authentication and assign session
-ctx_auth = AuthenticationContext(site_url)
-if ctx_auth.acquire_token_for_user(username, password):
-    ctx = ClientContext(site_url, ctx_auth)
-    ctx.authenticate_request = lambda request: ctx_auth.authenticate_request(request)
-    ctx._session = session  # ✅ This sets your proxy-enabled session
-
-    # Step 3: Get target SharePoint folder
-    target_folder = ctx.web.get_folder_by_server_relative_url(target_folder_url)
-    ctx.load(target_folder)
+with open(local_file_path, 'rb') as f:
+    name = os.path.basename(local_file_path)
+    target_file = target_folder.upload_file(name, f.read())
     ctx.execute_query()
-
-    # Step 4: Upload files in chunks
-    for filename in os.listdir(local_folder):
-        file_path = os.path.join(local_folder, filename)
-        if os.path.isfile(file_path):
-            file_size = os.path.getsize(file_path)
-            upload_id = str(uuid.uuid4())
-            print(f"Uploading {filename} ({file_size / (1024 * 1024):.2f} MB)...")
-
-            with open(file_path, 'rb') as f:
-                start_pos = 0
-                file_content = f.read(chunk_size)
-                uploaded_file = target_folder.files.create_upload_session(upload_id, file_content, start_pos)
-                ctx.execute_query()
-                start_pos += len(file_content)
-
-                while start_pos < file_size:
-                    file_content = f.read(chunk_size)
-                    is_last = (start_pos + len(file_content)) >= file_size
-
-                    if is_last:
-                        uploaded_file = uploaded_file.finish_upload(upload_id, file_content, start_pos)
-                    else:
-                        uploaded_file = uploaded_file.continue_upload(upload_id, file_content, start_pos)
-
-                    ctx.execute_query()
-                    start_pos += len(file_content)
-
-            print(f"Upload completed: {filename}")
-else:
-    print("Authentication failed.")
+    print("Upload successful!")
