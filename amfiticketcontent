@@ -1,0 +1,37 @@
+Title: Change Request: Integrate Python API Script for URL Data Retrieval in AMFI Automation
+
+Description:
+This is a change request for the AMFI automation process developed using UiPath. Currently, the automation performs the following steps:
+Reads each row from a mapping Excel file.
+Constructs a URL using values from the row (End Type, Scheme Type, Category).
+Opens Chrome and navigates to the constructed URL.
+Downloads a file from the URL.
+Continues with data manipulation and processing.
+
+Issue:
+The URL-based download step has stopped working, making the existing data retrieval process unusable.
+
+Proposed Change:
+We will replace the URL construction and web download logic with a Python script that calls an API using relevant parameters and processes the response.
+
+New Flow:
+For each row in the mapping file, extract the following fields:
+Category
+MaturityType
+MFID
+ReportDate
+SubCategory
+Pass these fields in the payload of a Python script that calls the updated API.
+The API returns a JSON response.
+The Python script will parse the JSON and save the required data to an Excel file.
+The rest of the UiPath automation will continue as before, using the newly generated Excel data.
+
+
+Python Script Functionality (Already Available):
+Accepts input parameters: Category, MaturityType, MFID, ReportDate, SubCategory.
+Sends these in the payload of an API request.
+Receives a JSON response.
+Converts the JSON response into a structured Excel output.
+
+Note:
+The developer is responsible for creating the updated mapping file for this process.
