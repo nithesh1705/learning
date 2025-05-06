@@ -1,0 +1,28 @@
+Think2Create
+
+Modules and UserRoles:
+1. Business Requirement Generation (Business User)
+2. Requirement Breakdown (Business Analyst)
+3. Documentation Generation (Developer or Analyst)
+
+Module 1: Business Requirement Generation (Business User)
+Input: Natural language prompt describing the business problem.
+Output: Structured Business Requirement Document (BRD).
+
+Module 2. Requirement Breakdown (Business Analyst)
+Input: BRD
+Output: Epics, user stories, sub-tasks (Jira-compatible format).
+
+Module 3. Documentation Generation (Developer or Analyst)
+Inputs: BRD
+Outputs:
+Solution Design Document (SDD) or
+Process Design Document (PDD) or
+Developer Notes / Tech Specs or
+Helping in understanding the requirements
+
+TechStack:
+Ollama
+Custom Seperate model creating using ModelFile
+hungging face - transformers
+python
