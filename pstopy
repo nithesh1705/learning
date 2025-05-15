@@ -1,0 +1,41 @@
+import requests
+
+# Create a session
+session = requests.Session()
+
+# Add cookies
+cookies = {
+    "nseappid": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcGkubmNIIwiYXVkIjoiYXBpLm5zZS5...
+    "AKA_A2": "A",
+    "bm_sz": "5FAB90E835472D389D6696DA7A451FF9~YAAQVQkQXFB7zSINAAQAAyUo0hWPkNw30a0auewN7k1KEi...
+    "ak_bmsc": "552D98DE3E5A18CC21E3A1327B8069AA~000000000000000000000000000000~YAAQVQkQXFB7z...
+    "_abck": "BB3807EFEC321C1D432D6F4AC12A04E2~-1~YAAQVQkQXFB7zSINAAQAAy0P6g36YzRYtuh4P0X1@...
+    "bm_sv": "A2EF9FAAA92B5DDBA5F312E231C20D8B~m6MRvQWEbSWUTPCN/ID~12Y1UKPoAYkSSRFFYv0gJPo...
+    "dtCookie": "v_4_srv_1_sn_1nq4Q0X9KiwoLgsGIJ0/J/hY3JCdtG4k6V5iytUgojL2TGC0XU/LChck36/Fxnbd...
+    "dtLatC": "3",
+    "dtPC": "3$8177$87_-1",
+    "dtSa": "-",
+    "rxVisitor": "1683546648709K7G6H53H5S9JG6VO",
+    "rxvt": "1683546653585|1683546648709"
+}
+
+# Set headers
+headers = {
+    "Accept": "*/*",
+    "Accept-Encoding": "gzip, deflate",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.nseindia.com/market-data/exchange-traded-funds-etf",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
+    "X-Requested-With": "XMLHttpRequest",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136 Safari/537.36"
+}
+
+# Make the request
+url = "https://www.nseindia.com/api/etf?csv=true&selectvalFormat=crores"
+response = session.get(url, headers=headers, cookies=cookies)
+
+# Save the response to a file
+with open("etf.csv", "w", encoding="utf-8") as f:
+    f.write(response.text)
