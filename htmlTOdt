@@ -1,0 +1,27 @@
+Dim doc As New HtmlAgilityPack.HtmlDocument()
+doc.LoadHtml(htmlContent)
+
+Dim tableNode = doc.DocumentNode.SelectSingleNode("//table")
+Dim dt As New DataTable()
+
+If tableNode IsNot Nothing Then
+    Dim headerRow = tableNode.SelectSingleNode(".//tr[1]")
+    Dim headerCells = headerRow.SelectNodes("th|td")
+
+    ' Create columns
+    For Each cell In headerCells
+        dt.Columns.Add(cell.InnerText.Trim())
+    Next
+
+    ' Add rows
+    For Each row In tableNode.SelectNodes(".//tr[position()>1]")
+        Dim dataRow = dt.NewRow()
+        Dim cells = row.SelectNodes("th|td")
+        For i = 0 To dt.Columns.Count - 1
+            dataRow(i) = cells(i).InnerText.Trim()
+        Next
+        dt.Rows.Add(dataRow)
+    Next
+End If
+
+outputTable = dt
