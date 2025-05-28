@@ -1,0 +1,29 @@
+import os
+import shutil
+import stat
+
+def force_delete_contents(folder_path):
+    if not os.path.exists(folder_path):
+        print(f"Folder '{folder_path}' does not exist.")
+        return
+
+    for root, dirs, files in os.walk(folder_path, topdown=False):
+        for name in files:
+            file_path = os.path.join(root, name)
+            try:
+                # Remove read-only or protected attribute (Windows)
+                os.chmod(file_path, stat.S_IWRITE)
+                os.remove(file_path)
+            except Exception as e:
+                print(f"Failed to delete file: {file_path} -> {e}")
+        for name in dirs:
+            dir_path = os.path.join(root, name)
+            try:
+                shutil.rmtree(dir_path, ignore_errors=True)
+            except Exception as e:
+                print(f"Failed to delete folder: {dir_path} -> {e}")
+
+    print(f"All contents deleted from: {folder_path}")
+
+# Example usage
+force_delete_contents(r"C:\Users\YourUsername\Downloads")
