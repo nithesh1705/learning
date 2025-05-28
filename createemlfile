@@ -1,0 +1,53 @@
+import os
+from email.message import EmailMessage
+from email.utils import make_msgid
+import mimetypes
+
+def create_eml(to_emails, cc_emails, subject, body, attachments=None, output_file='output.eml'):
+    msg = EmailMessage()
+    msg['Subject'] = subject
+    msg['From'] = 'you@example.com'
+    msg['To'] = ', '.join(to_emails)
+    msg['Cc'] = ', '.join(cc_emails)
+    msg.set_content(body)
+
+    if attachments:
+        for filepath in attachments:
+            if not os.path.isfile(filepath):
+                print(f"Attachment not found: {filepath}")
+                continue
+            mime_type, _ = mimetypes.guess_type(filepath)
+            mime_type = mime_type or 'application/octet-stream'
+            maintype, subtype = mime_type.split('/', 1)
+
+            with open(filepath, 'rb') as f:
+                msg.add_attachment(f.read(), maintype=maintype, subtype=subtype, filename=os.path.basename(filepath))
+
+    with open(output_file, 'wb') as f:
+        f.write(bytes(msg))
+    print(f"EML file saved to: {output_file}")
+
+
+# Example email info
+to_emails = ['recipient1@example.com', 'recipient2@example.com']
+cc_emails = ['ccperson@example.com']
+
+# --- Success EML ---
+create_eml(
+    to_emails=to_emails,
+    cc_emails=cc_emails,
+    subject="✅ Process Completed Successfully",
+    body="Hi Team,\n\nThe process finished successfully. Please find the attached reports.\n\nRegards,\nBot",
+    attachments=['report1.xlsx', 'report2.xlsx'],
+    output_file='success_email.eml'
+)
+
+# --- Exception EML ---
+create_eml(
+    to_emails=to_emails,
+    cc_emails=cc_emails,
+    subject="❌ Process Failed with Exception",
+    body="Hi Team,\n\nThe process encountered an exception. Please check the logs.\n\nRegards,\nBot",
+    attachments=None,
+    output_file='exception_email.eml'
+)
