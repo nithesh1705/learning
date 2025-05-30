@@ -1,0 +1,51 @@
+import os
+import shutil
+import time
+
+# Paths
+production_inbound = r"C:\Path\To\ProductionInboundPath"
+uat_inbound = r"C:\Path\To\UATInboundPath"
+uat_outbound = r"C:\Path\To\UATOutboundPath"
+production_outbound = r"C:\Path\To\ProductionOutboundPath"
+
+def sync_inbound():
+    # Copy entire folder structure from production_inbound to uat_inbound
+    for root, dirs, files in os.walk(production_inbound):
+        relative_path = os.path.relpath(root, production_inbound)
+        target_dir = os.path.join(uat_inbound, relative_path)
+
+        os.makedirs(target_dir, exist_ok=True)
+        for file in files:
+            if file.endswith(".eml"):
+                src_file = os.path.join(root, file)
+                dst_file = os.path.join(target_dir, file)
+                try:
+                    shutil.copy2(src_file, dst_file)
+                    print(f"Copied: {src_file} -> {dst_file}")
+                except Exception as e:
+                    print(f"Error copying {file}: {e}")
+
+def sync_outbound():
+    # Move .eml files from uat_outbound (including subfolders) to production_outbound
+    for root, dirs, files in os.walk(uat_outbound):
+        relative_path = os.path.relpath(root, uat_outbound)
+        target_dir = os.path.join(production_outbound, relative_path)
+
+        os.makedirs(target_dir, exist_ok=True)
+        for file in files:
+            if file.endswith(".eml"):
+                src_file = os.path.join(root, file)
+                dst_file = os.path.join(target_dir, file)
+                try:
+                    shutil.move(src_file, dst_file)
+                    print(f"Moved: {src_file} -> {dst_file}")
+                except Exception as e:
+                    print(f"Error moving {file}: {e}")
+
+if __name__ == "__main__":
+    while True:
+        print("Running sync...")
+        sync_inbound()
+        sync_outbound()
+        print("Waiting 5 minutes...")
+        time.sleep(300)
