@@ -1,0 +1,23 @@
+import psutil
+import os
+
+def close_edge_for_user(target_username):
+    edge_processes_closed = 0
+    for proc in psutil.process_iter(['pid', 'name', 'username']):
+        try:
+            if proc.info['name'] and 'msedge.exe' in proc.info['name'].lower():
+                if proc.info['username'] and target_username.lower() in proc.info['username'].lower():
+                    print(f"Terminating Edge for user {target_username}: PID {proc.info['pid']}")
+                    proc.terminate()
+                    edge_processes_closed += 1
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    if edge_processes_closed == 0:
+        print(f"No Edge processes found for user '{target_username}'.")
+    else:
+        print(f"Closed {edge_processes_closed} Edge processes for user '{target_username}'.")
+
+# Replace with the actual username you want to close Edge for
+target_user = "DOMAIN\\username"  # or just "username" depending on how usernames are formatted
+close_edge_for_user(target_user)
