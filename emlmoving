@@ -1,0 +1,59 @@
+import os
+import shutil
+import time
+from datetime import datetime
+
+# Paths
+production_inbound = r"C:\Path\To\ProductionInboundPath"
+uat_inbound = r"C:\Path\To\UATInboundPath"
+uat_outbound_base = r"C:\Path\To\UATOutboundPath"
+production_outbound = r"C:\Path\To\ProductionOutboundPath"
+
+def sync_inbound():
+    # Copy folder structure and .eml files from Production to UAT
+    for root, dirs, files in os.walk(production_inbound):
+        relative_path = os.path.relpath(root, production_inbound)
+        target_dir = os.path.join(uat_inbound, relative_path)
+
+        os.makedirs(target_dir, exist_ok=True)
+        for file in files:
+            if file.endswith(".eml"):
+                src_file = os.path.join(root, file)
+                dst_file = os.path.join(target_dir, file)
+                try:
+                    shutil.copy2(src_file, dst_file)
+                    print(f"Copied: {src_file} -> {dst_file}")
+                except Exception as e:
+                    print(f"Error copying {file}: {e}")
+
+def sync_outbound():
+    # Get today's date in dd-mm-yyyy format
+    today_str = datetime.today().strftime('%d-%m-%Y')
+    uat_outbound_today = os.path.join(uat_outbound_base, today_str)
+
+    if not os.path.exists(uat_outbound_today):
+        print(f"UAT Outbound folder for today ({today_str}) does not exist.")
+        return
+
+    for root, dirs, files in os.walk(uat_outbound_today):
+        relative_path = os.path.relpath(root, uat_outbound_today)
+        target_dir = os.path.join(production_outbound, relative_path)
+
+        os.makedirs(target_dir, exist_ok=True)
+        for file in files:
+            if file.endswith(".eml"):
+                src_file = os.path.join(root, file)
+                dst_file = os.path.join(target_dir, file)
+                try:
+                    shutil.move(src_file, dst_file)
+                    print(f"Moved: {src_file} -> {dst_file}")
+                except Exception as e:
+                    print(f"Error moving {file}: {e}")
+
+if __name__ == "__main__":
+    while True:
+        print("Starting sync...")
+        sync_inbound()
+        sync_outbound()
+        print("Waiting 5 minutes...\n")
+        time.sleep(300)
