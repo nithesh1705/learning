@@ -5,10 +5,17 @@ from openpyxl.utils import column_index_from_string
 from PIL import Image
 import os
 
-def excel_range_to_png(excel_path, output_path, start_cell, end_cell, dpi=300):
-    # Load workbook and sheet
+def excel_range_to_png(excel_path, output_path, start_cell, end_cell, sheet_name=None, dpi=300):
+    # Load workbook
     wb = openpyxl.load_workbook(excel_path, data_only=True)
-    sheet = wb.active
+
+    # Use specified sheet or default to active
+    if sheet_name:
+        if sheet_name not in wb.sheetnames:
+            raise ValueError(f"Sheet '{sheet_name}' not found in workbook.")
+        sheet = wb[sheet_name]
+    else:
+        sheet = wb.active
 
     # Extract start and end coordinates
     start_col_letter, start_row = ''.join(filter(str.isalpha, start_cell)), int(''.join(filter(str.isdigit, start_cell)))
@@ -44,5 +51,12 @@ def excel_range_to_png(excel_path, output_path, start_cell, end_cell, dpi=300):
 
     print(f"Screenshot saved to {output_path}")
 
-# Example usage:
-# excel_range_to_png("example.xlsx", "output.png", "B3", "H9")
+
+excel_range_to_png(
+    excel_path="path/to/your/file.xlsx",
+    output_path="output_image.png",
+    start_cell="B3",
+    end_cell="H9",
+    sheet_name="YourSheetName"
+)
+
