@@ -1,62 +1,36 @@
-import pandas as pd
-import openpyxl
-import matplotlib.pyplot as plt
-from openpyxl.utils import column_index_from_string
-from PIL import Image
+import win32com.client as win32
 import os
+from PIL import ImageGrab
 
-def excel_range_to_png(excel_path, output_path, start_cell, end_cell, sheet_name=None, dpi=300):
-    # Load workbook
-    wb = openpyxl.load_workbook(excel_path, data_only=True)
+def excel_range_to_colored_png(excel_path, output_path, sheet_name, range_address):
+    # Start Excel
+    excel = win32.gencache.EnsureDispatch('Excel.Application')
+    excel.Visible = False
 
-    # Use specified sheet or default to active
-    if sheet_name:
-        if sheet_name not in wb.sheetnames:
-            raise ValueError(f"Sheet '{sheet_name}' not found in workbook.")
-        sheet = wb[sheet_name]
-    else:
-        sheet = wb.active
+    # Open Workbook
+    wb = excel.Workbooks.Open(os.path.abspath(excel_path))
+    try:
+        ws = wb.Sheets(sheet_name)
 
-    # Extract start and end coordinates
-    start_col_letter, start_row = ''.join(filter(str.isalpha, start_cell)), int(''.join(filter(str.isdigit, start_cell)))
-    end_col_letter, end_row = ''.join(filter(str.isalpha, end_cell)), int(''.join(filter(str.isdigit, end_cell)))
-    start_col = column_index_from_string(start_col_letter)
-    end_col = column_index_from_string(end_col_letter)
+        # Copy range as picture
+        ws.Range(range_address).CopyPicture(Format=win32.constants.xlBitmap)
 
-    # Extract data from range
-    data = []
-    for row in sheet.iter_rows(min_row=start_row, max_row=end_row, min_col=start_col, max_col=end_col):
-        data.append([cell.value for cell in row])
+        # Paste into a new ChartObject to access the image
+        chart = ws.ChartObjects().Add(0, 0, 500, 500)
+        chart.Chart.Paste()
+        chart.Chart.Export(Filename=os.path.abspath(output_path), FilterName='PNG')
+        chart.Delete()
 
-    df = pd.DataFrame(data)
+        print(f"Screenshot saved as: {output_path}")
 
-    # Plot using matplotlib for high quality
-    fig, ax = plt.subplots(figsize=(len(df.columns)*1.2, len(df)*0.6), dpi=dpi)
-    ax.axis('tight')
-    ax.axis('off')
-    table = ax.table(cellText=df.values, colLabels=None, loc='center', cellLoc='center')
-    table.auto_set_font_size(False)
-    table.set_fontsize(12)
-
-    # Save figure as PNG
-    temp_path = output_path + ".temp.png"
-    plt.savefig(temp_path, bbox_inches='tight', dpi=dpi)
-    plt.close(fig)
-
-    # Crop whitespace for extra clarity
-    image = Image.open(temp_path)
-    image = image.crop(image.getbbox())
-    image.save(output_path)
-    os.remove(temp_path)
-
-    print(f"Screenshot saved to {output_path}")
+    finally:
+        wb.Close(SaveChanges=False)
+        excel.Quit()
 
 
-excel_range_to_png(
-    excel_path="path/to/your/file.xlsx",
-    output_path="output_image.png",
-    start_cell="B3",
-    end_cell="H9",
-    sheet_name="YourSheetName"
+excel_range_to_colored_png(
+    "example.xlsx",
+    "output.png",
+    sheet_name="VERCAU",
+    range_address="B3:H9"
 )
-
