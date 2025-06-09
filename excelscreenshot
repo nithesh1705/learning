@@ -1,0 +1,48 @@
+import pandas as pd
+import openpyxl
+import matplotlib.pyplot as plt
+from openpyxl.utils import column_index_from_string
+from PIL import Image
+import os
+
+def excel_range_to_png(excel_path, output_path, start_cell, end_cell, dpi=300):
+    # Load workbook and sheet
+    wb = openpyxl.load_workbook(excel_path, data_only=True)
+    sheet = wb.active
+
+    # Extract start and end coordinates
+    start_col_letter, start_row = ''.join(filter(str.isalpha, start_cell)), int(''.join(filter(str.isdigit, start_cell)))
+    end_col_letter, end_row = ''.join(filter(str.isalpha, end_cell)), int(''.join(filter(str.isdigit, end_cell)))
+    start_col = column_index_from_string(start_col_letter)
+    end_col = column_index_from_string(end_col_letter)
+
+    # Extract data from range
+    data = []
+    for row in sheet.iter_rows(min_row=start_row, max_row=end_row, min_col=start_col, max_col=end_col):
+        data.append([cell.value for cell in row])
+
+    df = pd.DataFrame(data)
+
+    # Plot using matplotlib for high quality
+    fig, ax = plt.subplots(figsize=(len(df.columns)*1.2, len(df)*0.6), dpi=dpi)
+    ax.axis('tight')
+    ax.axis('off')
+    table = ax.table(cellText=df.values, colLabels=None, loc='center', cellLoc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(12)
+
+    # Save figure as PNG
+    temp_path = output_path + ".temp.png"
+    plt.savefig(temp_path, bbox_inches='tight', dpi=dpi)
+    plt.close(fig)
+
+    # Crop whitespace for extra clarity
+    image = Image.open(temp_path)
+    image = image.crop(image.getbbox())
+    image.save(output_path)
+    os.remove(temp_path)
+
+    print(f"Screenshot saved to {output_path}")
+
+# Example usage:
+# excel_range_to_png("example.xlsx", "output.png", "B3", "H9")
