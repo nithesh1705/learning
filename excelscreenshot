@@ -1,36 +1,40 @@
-import win32com.client as win32
 import os
+import time
+import win32com.client as win32
 from PIL import ImageGrab
 
-def excel_range_to_colored_png(excel_path, output_path, sheet_name, range_address):
-    # Start Excel
+def excel_range_to_png(excel_path, sheet_name, start_cell, end_cell, output_path):
     excel = win32.gencache.EnsureDispatch('Excel.Application')
-    excel.Visible = False
-
-    # Open Workbook
+    excel.Visible = False  # Set to True for debugging
+    
     wb = excel.Workbooks.Open(os.path.abspath(excel_path))
-    try:
-        ws = wb.Sheets(sheet_name)
+    ws = wb.Sheets(sheet_name)
 
-        # Copy range as picture
-        ws.Range(range_address).CopyPicture(Format=win32.constants.xlBitmap)
+    # Select the range
+    cell_range = ws.Range(f"{start_cell}:{end_cell}")
+    cell_range.CopyPicture(Format=win32.constants.xlPicture)
 
-        # Paste into a new ChartObject to access the image
-        chart = ws.ChartObjects().Add(0, 0, 500, 500)
-        chart.Chart.Paste()
-        chart.Chart.Export(Filename=os.path.abspath(output_path), FilterName='PNG')
-        chart.Delete()
+    # Use a dummy chart object to paste the copied range and export as image
+    chart = ws.ChartObjects().Add(0, 0, cell_range.Width, cell_range.Height)
+    chart.Activate()
+    chart.Chart.Paste()
 
-        print(f"Screenshot saved as: {output_path}")
+    # Save chart as image
+    image_path = os.path.abspath(output_path)
+    chart.Chart.Export(image_path)
+    
+    # Clean up
+    chart.Delete()
+    wb.Close(False)
+    excel.Quit()
 
-    finally:
-        wb.Close(SaveChanges=False)
-        excel.Quit()
+    print(f"Saved screenshot to {image_path}")
 
+# === Usage ===
+excel_file = "sample.xlsx"
+sheet = "Sheet1"
+start = "B2"
+end = "G20"
+output_image = "output.png"
 
-excel_range_to_colored_png(
-    "example.xlsx",
-    "output.png",
-    sheet_name="VERCAU",
-    range_address="B3:H9"
-)
+excel_range_to_png(excel_file, sheet, start, end, output_image)
