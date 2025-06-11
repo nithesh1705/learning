@@ -1,72 +1,35 @@
-import os
-import shutil
 import win32com.client
 
-def export_excel_range_to_clean_html(excel_path, sheet_name, start_cell, end_cell, output_html_path):
+def export_excel_range_as_image(excel_path, sheet_name, range_str, output_png_path):
     excel = win32com.client.Dispatch("Excel.Application")
-    excel.Visible = False
-    excel.DisplayAlerts = False
+    excel.Visible = False  # Set True to debug visually
 
-    # Temporary folder to export HTML files
-    temp_folder = os.path.join(os.path.dirname(output_html_path), "excel_html_temp")
-    if os.path.exists(temp_folder):
-        shutil.rmtree(temp_folder)
-    os.makedirs(temp_folder)
+    wb = excel.Workbooks.Open(excel_path)
+    ws = wb.Sheets(sheet_name)
 
-    try:
-        # Open source workbook
-        wb = excel.Workbooks.Open(excel_path)
-        ws = wb.Sheets(sheet_name)
+    # Copy range as picture
+    rng = ws.Range(range_str)
+    rng.CopyPicture(Appearance=1, Format=2)  # xlScreen = 1, xlPicture = 2
 
-        # Define range
-        export_range = ws.Range(f"{start_cell}:{end_cell}")
+    # Create a temporary chart and paste the picture into it
+    chart_obj = ws.ChartObjects().Add(Left=rng.Left, Top=rng.Top, Width=rng.Width, Height=rng.Height)
+    chart_obj.Chart.Paste()
 
-        # Create new workbook with one sheet and paste range
-        new_wb = excel.Workbooks.Add()
-        new_ws = new_wb.Sheets(1)
+    # Export chart as PNG
+    chart_obj.Chart.Export(output_png_path, "PNG")
 
-        for s in new_wb.Sheets:
-            if s.Name != new_ws.Name:
-                s.Delete()
+    # Cleanup
+    chart_obj.Delete()
+    wb.Close(SaveChanges=False)
+    excel.Quit()
 
-        export_range.Copy()
-        new_ws.Range("A1").PasteSpecial(Paste=-4104)  # Paste with source formatting
+    print(f"Image saved to: {output_png_path}")
 
-        # Save as HTML in temporary location
-        temp_html_path = os.path.join(temp_folder, "export.htm")
-        new_wb.SaveAs(temp_html_path, FileFormat=44)  # 44 = xlHtml
-
-        # Find and copy the actual sheet HTML (e.g., "sheet001.htm")
-        sheet_folder = os.path.splitext(temp_html_path)[0] + "_files"
-        sheet_html = None
-        for file in os.listdir(sheet_folder):
-            if file.startswith("sheet") and file.endswith(".htm"):
-                sheet_html = os.path.join(sheet_folder, file)
-                break
-
-        if sheet_html and os.path.exists(sheet_html):
-            shutil.copy(sheet_html, output_html_path)
-            print(f"✅ Clean HTML saved to: {output_html_path}")
-        else:
-            print("❌ Could not find the clean sheet HTML file.")
-
-    except Exception as e:
-        print("❌ Error:", e)
-
-    finally:
-        # Cleanup
-        new_wb.Close(False)
-        wb.Close(False)
-        excel.Quit()
-
-        # Optional: remove temp folder
-        shutil.rmtree(temp_folder, ignore_errors=True)
 
 # === Example usage ===
-excel_file = r"C:\Path\To\Your\File.xlsx"
-sheet = "Sheet1"
-start = "B2"
-end = "G20"
-clean_html_output = r"C:\Path\To\Output\CleanRange.html"
-
-export_excel_range_to_clean_html(excel_file, sheet, start, end, clean_html_output)
+export_excel_range_as_image(
+    excel_path=r"D:\YourExcelFile.xlsx",
+    sheet_name="Sheet1",
+    range_str="B2:E10",
+    output_png_path=r"D:\excel_capture.png"
+)
