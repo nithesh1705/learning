@@ -1,0 +1,72 @@
+import os
+import shutil
+import win32com.client
+
+def export_excel_range_to_clean_html(excel_path, sheet_name, start_cell, end_cell, output_html_path):
+    excel = win32com.client.Dispatch("Excel.Application")
+    excel.Visible = False
+    excel.DisplayAlerts = False
+
+    # Temporary folder to export HTML files
+    temp_folder = os.path.join(os.path.dirname(output_html_path), "excel_html_temp")
+    if os.path.exists(temp_folder):
+        shutil.rmtree(temp_folder)
+    os.makedirs(temp_folder)
+
+    try:
+        # Open source workbook
+        wb = excel.Workbooks.Open(excel_path)
+        ws = wb.Sheets(sheet_name)
+
+        # Define range
+        export_range = ws.Range(f"{start_cell}:{end_cell}")
+
+        # Create new workbook with one sheet and paste range
+        new_wb = excel.Workbooks.Add()
+        new_ws = new_wb.Sheets(1)
+
+        for s in new_wb.Sheets:
+            if s.Name != new_ws.Name:
+                s.Delete()
+
+        export_range.Copy()
+        new_ws.Range("A1").PasteSpecial(Paste=-4104)  # Paste with source formatting
+
+        # Save as HTML in temporary location
+        temp_html_path = os.path.join(temp_folder, "export.htm")
+        new_wb.SaveAs(temp_html_path, FileFormat=44)  # 44 = xlHtml
+
+        # Find and copy the actual sheet HTML (e.g., "sheet001.htm")
+        sheet_folder = os.path.splitext(temp_html_path)[0] + "_files"
+        sheet_html = None
+        for file in os.listdir(sheet_folder):
+            if file.startswith("sheet") and file.endswith(".htm"):
+                sheet_html = os.path.join(sheet_folder, file)
+                break
+
+        if sheet_html and os.path.exists(sheet_html):
+            shutil.copy(sheet_html, output_html_path)
+            print(f"✅ Clean HTML saved to: {output_html_path}")
+        else:
+            print("❌ Could not find the clean sheet HTML file.")
+
+    except Exception as e:
+        print("❌ Error:", e)
+
+    finally:
+        # Cleanup
+        new_wb.Close(False)
+        wb.Close(False)
+        excel.Quit()
+
+        # Optional: remove temp folder
+        shutil.rmtree(temp_folder, ignore_errors=True)
+
+# === Example usage ===
+excel_file = r"C:\Path\To\Your\File.xlsx"
+sheet = "Sheet1"
+start = "B2"
+end = "G20"
+clean_html_output = r"C:\Path\To\Output\CleanRange.html"
+
+export_excel_range_to_clean_html(excel_file, sheet, start, end, clean_html_output)
