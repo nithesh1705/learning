@@ -1,0 +1,143 @@
+🚀 Overview
+This project automates ticket categorization, approval handling, task assignment, and resolution using n8n, GenAI, and modular agents. It processes incoming emails, auto-identifies ticket categories using AI, and routes tasks to appropriate agents or humans if needed.
+
+👥 Architecture: Team-Based Agent Structure
+1. Identifier Agent
+Responsible for:
+
+Reading and parsing incoming emails
+
+Categorizing the ticket using GenAI
+
+Creating a Samadhan ticket
+
+Triggering the Performer Agent
+
+Modules:
+Module 1: Email Intake
+Fetch new emails from a configured inbox (e.g., using IMAP node in n8n).
+
+Extract:
+
+Sender’s email
+
+Email subject line
+
+Email body
+
+Module 2: AI-based Categorization
+Pass the extracted email content to a GenAI model (e.g., via OpenAI, Ollama, etc.) to:
+
+Identify Category (e.g., IT, HR, Finance)
+
+Identify Sub-Category (e.g., Email Issue, Salary Query, Reimbursement)
+
+Fallback Handling:
+
+If AI is unable to determine, mark:
+
+Category as Others
+
+Sub-Category as NA
+
+Automatically send a reply to the sender saying:
+
+"Your request is being reviewed manually. A human support agent will assist you shortly."
+
+Module 3: Create Ticket
+Using the extracted and AI-enriched data, create a Samadhan ticket in the internal system (via HTTP Request/API or Database node).
+
+Module 4: Trigger Performer Agent
+If no further approvals are required, trigger the Performer Agent using a webhook or HTTP call.
+
+2. Performer Agent
+Responsible for:
+
+Handling approval workflows
+
+Assigning the task to the right Task Agent
+
+Overseeing ticket resolution
+
+Communicating outcomes to the user
+
+Modules:
+Module 1: Trigger Listener
+Webhook Trigger in n8n waits for incoming requests from Identifier Agent.
+
+Module 2: Approval Check
+Based on ticket category/sub-category, determine:
+
+Does this require manager/client/team lead approval?
+
+Use database lookup/API logic to check.
+
+Module 3: Task Assignment
+If approvals are granted:
+
+Call the relevant Task Agent (based on category).
+
+If no approvals are needed, directly:
+
+Call the appropriate Task Agent based on category.
+
+Module 4: Resolution & Closure
+Once the Task Agent finishes:
+
+Mark the ticket as closed
+
+If issues arise or the task agent fails, escalate to a human via:
+
+Email
+
+Slack/Teams alert
+
+On success, email the user with:
+
+"Your issue has been successfully resolved. Ticket ID: #1234"
+
+🧩 Task Agents (Category Based)
+These are modular n8n workflows designed per category.
+
+Examples:
+✅ Task Agent 1 – IT-related workflows
+
+✅ Task Agent 2 – HR-related workflows
+
+✅ Task Agent 3 – Finance-related workflows
+
+✅ Task Agent 4 – Facilities/Other
+
+Each task agent performs specific automations like:
+
+Resetting passwords
+
+Updating records
+
+Sending HR documents
+
+Processing reimbursements
+
+Escalating failed actions
+
+📌 Flow Summary
+mermaid
+Copy
+Edit
+flowchart TD
+    A[New Email Arrives] --> B[Identifier Agent: Extract Details]
+    B --> C[GenAI Categorization]
+    C --> D{AI Identified?}
+    D -- Yes --> E[Create Samadhan Ticket]
+    D -- No --> F[Send 'Human Will Take Over' Email]
+    E --> G{Approval Needed?}
+    G -- No --> H[Trigger Performer Agent]
+    G -- Yes --> H[Trigger Performer Agent]
+    H --> I[Performer Agent: Approval Check]
+    I --> J{Approvals Granted?}
+    J -- Yes --> K[Trigger Task Agent]
+    J -- No --> K[Trigger Task Agent]
+    K --> L[Task Agent Executes Task]
+    L --> M{Success?}
+    M -- Yes --> N[Close Ticket, Email User]
+    M -- No --> O[Involve Human]
