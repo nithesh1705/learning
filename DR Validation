@@ -1,0 +1,510 @@
+import ctypes
+import importlib.metadata
+import json
+import os
+import platform
+import shutil
+import socket
+import ssl
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import winreg
+from dataclasses import dataclass, asdict
+from pathlib import Path
+from typing import Any
+
+
+# =============================================================================
+# CONFIGURATION
+# Update the values below as per the DR validation requirement.
+# =============================================================================
+
+TELNET_TARGETS = [
+    {"name": "Example Server", "ip": "8.8.8.8", "port": 53},
+    # {"name": "Application DB", "ip": "10.10.10.10", "port": 1521},
+]
+
+APPLICATIONS = {
+    "chrome": {
+        "display_name": "Google Chrome",
+        "executables": ["chrome.exe"],
+        "common_paths": [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        ],
+    },
+    "edge": {
+        "display_name": "Microsoft Edge",
+        "executables": ["msedge.exe"],
+        "common_paths": [
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        ],
+    },
+    "word": {
+        "display_name": "Microsoft Word",
+        "executables": ["winword.exe"],
+        "common_paths": [
+            r"C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE",
+            r"C:\Program Files (x86)\Microsoft Office\root\Office16\WINWORD.EXE",
+        ],
+    },
+    "excel": {
+        "display_name": "Microsoft Excel",
+        "executables": ["excel.exe"],
+        "common_paths": [
+            r"C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE",
+            r"C:\Program Files (x86)\Microsoft Office\root\Office16\EXCEL.EXE",
+        ],
+    },
+    "outlook": {
+        "display_name": "Microsoft Outlook",
+        "executables": ["outlook.exe"],
+        "common_paths": [
+            r"C:\Program Files\Microsoft Office\root\Office16\OUTLOOK.EXE",
+            r"C:\Program Files (x86)\Microsoft Office\root\Office16\OUTLOOK.EXE",
+        ],
+    },
+    "notepad": {
+        "display_name": "Notepad",
+        "executables": ["notepad.exe"],
+        "common_paths": [
+            r"C:\Windows\System32\notepad.exe",
+            r"C:\Windows\notepad.exe",
+        ],
+    },
+}
+
+FOLDER_ACCESS_PATHS = [
+    r"C:\Windows",
+    # r"\\server\sharedrive\folder",
+    # r"D:\SomeLocalFolder",
+]
+
+PROXY_SETTINGS = {
+    "expected_proxy_enabled": None,  # True / False / None means report only.
+    "expected_proxy_server": "",  # Example: "http=proxy.company.com:8080;https=proxy.company.com:8080"
+    "test_url": "https://www.microsoft.com",
+}
+
+SSL_CERTIFICATIONS = [
+    # Use type "file" to validate a certificate file path.
+    # {"name": "Root CA File", "type": "file", "path": r"C:\certs\root_ca.cer"},
+    # Use type "host" to validate SSL handshake and expiry for a server.
+    {"name": "Microsoft SSL", "type": "host", "host": "www.microsoft.com", "port": 443},
+    # Use type "store_subject" to search Windows certificate store with certutil.
+    # {"name": "Company Root CA", "type": "store_subject", "subject": "Company Root CA"},
+]
+
+PYTHON_PACKAGES = [
+    # Package names as used by pip/importlib metadata.
+    "requests",
+    "pandas",
+    "openpyxl",
+]
+
+URLS = [
+    "https://www.microsoft.com",
+    "https://www.google.com",
+]
+
+COMMAND_TIMEOUT_SECONDS = 15
+URL_TIMEOUT_SECONDS = 15
+INSTALL_MISSING_PACKAGES = True
+RESULT_JSON_FILE = "DR_Verification_Result.json"
+
+
+# =============================================================================
+# CODE
+# =============================================================================
+
+PASS = "PASS"
+FAIL = "FAIL"
+WARN = "WARN"
+
+
+@dataclass
+class Result:
+    category: str
+    item: str
+    status: str
+    details: str
+
+
+results: list[Result] = []
+
+
+def print_header(title: str) -> None:
+    line = "=" * 78
+    print(f"\n{line}\n{title}\n{line}", flush=True)
+
+
+def print_step(message: str) -> None:
+    print(f"[{time.strftime('%H:%M:%S')}] {message}", flush=True)
+
+
+def add_result(category: str, item: str, status: str, details: str) -> None:
+    results.append(Result(category, item, status, details))
+    print(f"    -> {status}: {details}", flush=True)
+
+
+def run_command(command: list[str], timeout: int = COMMAND_TIMEOUT_SECONDS) -> tuple[int, str]:
+    print_step("CMD: " + " ".join(command))
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+        )
+        output = (completed.stdout or "") + (completed.stderr or "")
+        if output.strip():
+            print(output.strip(), flush=True)
+        return completed.returncode, output.strip()
+    except subprocess.TimeoutExpired as exc:
+        output = (exc.stdout or "") + (exc.stderr or "")
+        if isinstance(output, bytes):
+            output = output.decode(errors="replace")
+        return 124, f"Timed out after {timeout} seconds. {output}".strip()
+    except FileNotFoundError as exc:
+        return 127, str(exc)
+    except Exception as exc:
+        return 1, str(exc)
+
+
+def normalize_host_from_url(url: str) -> str:
+    parsed = urllib.parse.urlparse(url if "://" in url else f"https://{url}")
+    return parsed.hostname or url
+
+
+def check_telnet() -> None:
+    print_header("TELNET / PORT CONNECTIVITY CHECKS")
+    telnet_path = shutil.which("telnet")
+    if not telnet_path:
+        print_step("Windows telnet command not found. Socket fallback will still check connectivity.")
+
+    for target in TELNET_TARGETS:
+        name = target.get("name") or target.get("ip")
+        ip = str(target["ip"])
+        port = int(target["port"])
+        item = f"{name} ({ip}:{port})"
+
+        if telnet_path:
+            code, output = run_command(["cmd", "/c", "telnet", ip, str(port)], timeout=COMMAND_TIMEOUT_SECONDS)
+            if code == 0:
+                add_result("Telnet", item, PASS, "telnet command completed successfully.")
+                continue
+            if code == 124:
+                print_step("Telnet command timed out. Trying socket connectivity check.")
+            else:
+                print_step(f"Telnet command returned code {code}. Trying socket connectivity check.")
+                if output:
+                    print_step(output)
+
+        try:
+            print_step(f"SOCKET: testing {ip}:{port}")
+            with socket.create_connection((ip, port), timeout=COMMAND_TIMEOUT_SECONDS):
+                add_result("Telnet", item, PASS, "TCP port is reachable by socket check.")
+        except Exception as exc:
+            add_result("Telnet", item, FAIL, f"TCP port is not reachable. {exc}")
+
+
+def registry_app_path(executable: str) -> str:
+    subkey = rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{executable}"
+    roots = [
+        (winreg.HKEY_LOCAL_MACHINE, winreg.KEY_WOW64_64KEY),
+        (winreg.HKEY_LOCAL_MACHINE, winreg.KEY_WOW64_32KEY),
+        (winreg.HKEY_CURRENT_USER, 0),
+    ]
+    for root, flags in roots:
+        try:
+            with winreg.OpenKey(root, subkey, 0, winreg.KEY_READ | flags) as key:
+                value, _ = winreg.QueryValueEx(key, None)
+                if value and Path(value).exists():
+                    return value
+        except OSError:
+            continue
+    return ""
+
+
+def check_applications() -> None:
+    print_header("APPLICATION INSTALLATION CHECKS")
+    for app_key, config in APPLICATIONS.items():
+        display_name = config["display_name"]
+        print_step(f"Checking application: {display_name}")
+        found_paths: list[str] = []
+
+        for exe in config.get("executables", []):
+            found = shutil.which(exe)
+            if found:
+                found_paths.append(found)
+            reg_found = registry_app_path(exe)
+            if reg_found:
+                found_paths.append(reg_found)
+
+        for common_path in config.get("common_paths", []):
+            if Path(common_path).exists():
+                found_paths.append(common_path)
+
+        unique_paths = sorted(set(found_paths))
+        if unique_paths:
+            add_result("Applications", display_name, PASS, "Found: " + "; ".join(unique_paths))
+        else:
+            add_result("Applications", display_name, FAIL, f"{app_key} executable not found.")
+
+
+def check_folder_access() -> None:
+    print_header("FOLDER AND SHAREDRIVE ACCESS CHECKS")
+    for path_text in FOLDER_ACCESS_PATHS:
+        path = Path(path_text)
+        print_step(f"Checking folder/share path: {path_text}")
+        try:
+            if not path.exists():
+                add_result("Folder Access", path_text, FAIL, "Path does not exist or is not reachable.")
+                continue
+            if not path.is_dir():
+                add_result("Folder Access", path_text, FAIL, "Path exists but is not a folder.")
+                continue
+            entries = list(path.iterdir())
+            sample_count = min(len(entries), 5)
+            add_result("Folder Access", path_text, PASS, f"Accessible. Items visible: {len(entries)}. Sample checked: {sample_count}.")
+        except PermissionError as exc:
+            add_result("Folder Access", path_text, FAIL, f"Permission denied. {exc}")
+        except Exception as exc:
+            add_result("Folder Access", path_text, FAIL, str(exc))
+
+
+def get_windows_proxy_settings() -> dict[str, Any]:
+    settings: dict[str, Any] = {}
+    key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            for value_name in ["ProxyEnable", "ProxyServer", "ProxyOverride", "AutoConfigURL"]:
+                try:
+                    value, _ = winreg.QueryValueEx(key, value_name)
+                    settings[value_name] = value
+                except OSError:
+                    settings[value_name] = None
+    except OSError as exc:
+        settings["error"] = str(exc)
+    return settings
+
+
+def check_proxy() -> None:
+    print_header("PROXY SETTINGS CHECK")
+    settings = get_windows_proxy_settings()
+    print_step("Windows proxy settings:")
+    print(json.dumps(settings, indent=2), flush=True)
+
+    proxy_enabled = bool(settings.get("ProxyEnable"))
+    expected_enabled = PROXY_SETTINGS.get("expected_proxy_enabled")
+    expected_server = str(PROXY_SETTINGS.get("expected_proxy_server") or "").strip()
+    actual_server = str(settings.get("ProxyServer") or "").strip()
+
+    if expected_enabled is None:
+        add_result("Proxy", "Windows Proxy Enabled", WARN, f"Report only. ProxyEnable={proxy_enabled}.")
+    elif proxy_enabled == expected_enabled:
+        add_result("Proxy", "Windows Proxy Enabled", PASS, f"ProxyEnable={proxy_enabled}.")
+    else:
+        add_result("Proxy", "Windows Proxy Enabled", FAIL, f"Expected {expected_enabled}, found {proxy_enabled}.")
+
+    if expected_server:
+        if expected_server.lower() == actual_server.lower():
+            add_result("Proxy", "Windows Proxy Server", PASS, actual_server)
+        else:
+            add_result("Proxy", "Windows Proxy Server", FAIL, f"Expected '{expected_server}', found '{actual_server}'.")
+    else:
+        add_result("Proxy", "Windows Proxy Server", WARN, f"Report only. ProxyServer='{actual_server}'.")
+
+    test_url = PROXY_SETTINGS.get("test_url")
+    if test_url:
+        check_single_url(str(test_url), category="Proxy URL Test")
+
+
+def check_ssl_certifications() -> None:
+    print_header("SSL CERTIFICATION CHECKS")
+    for cert in SSL_CERTIFICATIONS:
+        cert_type = str(cert.get("type", "")).lower()
+        name = str(cert.get("name") or cert.get("host") or cert.get("path"))
+        print_step(f"Checking SSL certification item: {name}")
+
+        if cert_type == "file":
+            path_text = str(cert.get("path", ""))
+            path = Path(path_text)
+            if path.exists() and path.is_file():
+                add_result("SSL", name, PASS, f"Certificate file found: {path_text}")
+            else:
+                add_result("SSL", name, FAIL, f"Certificate file not found: {path_text}")
+            continue
+
+        if cert_type == "host":
+            host = str(cert["host"])
+            port = int(cert.get("port", 443))
+            try:
+                context = ssl.create_default_context()
+                with socket.create_connection((host, port), timeout=COMMAND_TIMEOUT_SECONDS) as sock:
+                    with context.wrap_socket(sock, server_hostname=host) as secure_sock:
+                        certificate = secure_sock.getpeercert()
+                not_after = certificate.get("notAfter", "unknown")
+                add_result("SSL", name, PASS, f"SSL handshake successful. Certificate expiry: {not_after}")
+            except Exception as exc:
+                add_result("SSL", name, FAIL, f"SSL check failed. {exc}")
+            continue
+
+        if cert_type == "store_subject":
+            subject = str(cert.get("subject", "")).strip()
+            code, output = run_command(["cmd", "/c", "certutil", "-store", "Root"], timeout=COMMAND_TIMEOUT_SECONDS)
+            if code == 0 and subject and subject.lower() in output.lower():
+                add_result("SSL", name, PASS, f"Certificate subject found in Root store: {subject}")
+            elif code == 0:
+                add_result("SSL", name, FAIL, f"Certificate subject not found in Root store: {subject}")
+            else:
+                add_result("SSL", name, FAIL, f"certutil failed. {output[-500:]}")
+            continue
+
+        add_result("SSL", name, FAIL, f"Unknown SSL check type: {cert_type}")
+
+
+def installed_python_packages() -> set[str]:
+    packages = set()
+    for dist in importlib.metadata.distributions():
+        name = dist.metadata.get("Name")
+        if name:
+            packages.add(name.lower())
+    return packages
+
+
+def pip_install(package: str) -> tuple[bool, str]:
+    command = [sys.executable, "-m", "pip", "install", package]
+    code, output = run_command(command, timeout=300)
+    return code == 0, output
+
+
+def check_python_packages() -> None:
+    print_header("PYTHON PACKAGE CHECKS")
+    installed = installed_python_packages()
+    for package in PYTHON_PACKAGES:
+        package_name = package.strip()
+        if not package_name:
+            continue
+        print_step(f"Checking Python package: {package_name}")
+        if package_name.lower() in installed:
+            version = importlib.metadata.version(package_name)
+            add_result("Python Packages", package_name, PASS, f"Installed. Version: {version}")
+            continue
+
+        if not INSTALL_MISSING_PACKAGES:
+            add_result("Python Packages", package_name, FAIL, "Not installed. Auto install disabled.")
+            continue
+
+        print_step(f"Package missing. Installing with pip: {package_name}")
+        success, output = pip_install(package_name)
+        if success:
+            try:
+                version = importlib.metadata.version(package_name)
+            except importlib.metadata.PackageNotFoundError:
+                version = "installed, version not detected"
+            add_result("Python Packages", package_name, PASS, f"Installed successfully. Version: {version}")
+        else:
+            add_result("Python Packages", package_name, FAIL, f"Install failed. {output[-500:]}")
+
+
+def check_single_url(url: str, category: str = "URLs") -> None:
+    full_url = url if "://" in url else f"https://{url}"
+    host = normalize_host_from_url(full_url)
+    print_step(f"Checking URL: {full_url}")
+    run_command(["cmd", "/c", "nslookup", host], timeout=COMMAND_TIMEOUT_SECONDS)
+
+    request = urllib.request.Request(
+        full_url,
+        headers={"User-Agent": "DR-Verification-Python/1.0"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=URL_TIMEOUT_SECONDS) as response:
+            status_code = response.getcode()
+            add_result(category, full_url, PASS, f"Reachable. HTTP status: {status_code}")
+    except urllib.error.HTTPError as exc:
+        if 200 <= exc.code < 500:
+            add_result(category, full_url, WARN, f"Server responded with HTTP status: {exc.code}")
+        else:
+            add_result(category, full_url, FAIL, f"HTTP error: {exc.code}")
+    except Exception as exc:
+        add_result(category, full_url, FAIL, f"URL not reachable. {exc}")
+
+
+def check_urls() -> None:
+    print_header("URL ACCESS CHECKS")
+    for url in URLS:
+        check_single_url(url)
+
+
+def print_system_info() -> None:
+    print_header("SYSTEM INFO")
+    print_step(f"Computer Name: {platform.node()}")
+    print_step(f"OS: {platform.platform()}")
+    print_step(f"Python: {sys.version}")
+    print_step(f"Python Executable: {sys.executable}")
+    print_step(f"Running as Admin: {bool(ctypes.windll.shell32.IsUserAnAdmin())}")
+    print_step(f"Current Directory: {os.getcwd()}")
+
+
+def print_final_summary() -> None:
+    print_header("FINAL DR VERIFICATION SUMMARY")
+    categories = sorted(set(result.category for result in results))
+    total_pass = sum(1 for result in results if result.status == PASS)
+    total_fail = sum(1 for result in results if result.status == FAIL)
+    total_warn = sum(1 for result in results if result.status == WARN)
+
+    print(f"{'CATEGORY':<22} {'ITEM':<42} {'STATUS':<8} DETAILS", flush=True)
+    print("-" * 120, flush=True)
+    for result in results:
+        item = result.item[:39] + "..." if len(result.item) > 42 else result.item
+        details = result.details.replace("\n", " ")
+        print(f"{result.category:<22} {item:<42} {result.status:<8} {details}", flush=True)
+
+    print("\nCategory Status:", flush=True)
+    for category in categories:
+        category_results = [result for result in results if result.category == category]
+        passed = sum(1 for result in category_results if result.status == PASS)
+        failed = sum(1 for result in category_results if result.status == FAIL)
+        warned = sum(1 for result in category_results if result.status == WARN)
+        overall = FAIL if failed else WARN if warned else PASS
+        print(f"  {category:<22} {overall:<8} PASS={passed} FAIL={failed} WARN={warned}", flush=True)
+
+    print("\nOverall Status:", flush=True)
+    overall_status = FAIL if total_fail else WARN if total_warn else PASS
+    print(f"  {overall_status} | PASS={total_pass} FAIL={total_fail} WARN={total_warn} TOTAL={len(results)}", flush=True)
+
+    with open(RESULT_JSON_FILE, "w", encoding="utf-8") as file:
+        json.dump([asdict(result) for result in results], file, indent=2)
+    print_step(f"Detailed JSON result saved to: {Path(RESULT_JSON_FILE).resolve()}")
+
+
+def main() -> int:
+    start = time.time()
+    print_header("DR VERIFICATION STARTED")
+    print_step(f"Started at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+    print_system_info()
+    check_telnet()
+    check_applications()
+    check_folder_access()
+    check_proxy()
+    check_ssl_certifications()
+    check_python_packages()
+    check_urls()
+    print_final_summary()
+
+    elapsed = time.time() - start
+    print_step(f"Completed in {elapsed:.2f} seconds.")
+    return 1 if any(result.status == FAIL for result in results) else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
