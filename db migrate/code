@@ -1,0 +1,364 @@
+DB_SERVER="server"
+DB_DATABASE="database"
+DB_USERNAME="username"
+DB_PASSWORD="password"
+DB_DRIVER="ODBC Driver 18 for SQL Server"
+
+MAIN_TABLE="IPRUAssist_Queries"
+ARCHIVE_TABLE="IPRUAssist_Queries_Archived"
+
+DATE_COLUMN="Date_Time_of_Question"
+
+RETENTION_DAYS=30
+WINDOW_START_HOUR=11
+WINDOW_END_HOUR=13
+
+ERROR_RETRY_SECONDS=60
+IDLE_SLEEP_SECONDS=30
+OUTSIDE_WINDOW_SLEEP_SECONDS=300
+
+LOG_FILE="D:\ICICI - Projects\ICICI_DB_Migration\log\dbmigrate.log"
+
+  ----------------------------------------------------------------------------------------------------------------
+
+
+  """
+Archive rows from IPRUAssist_Queries into IPRUAssist_Queries_Archived.
+
+The script is intentionally long-running. It only processes rows during the
+10 PM to 6 AM maintenance window and sleeps outside that window.
+"""
+
+import datetime as dt
+import logging
+import os
+import time
+from logging.handlers import RotatingFileHandler
+from typing import Optional, Tuple
+
+import pyodbc
+from dotenv import load_dotenv
+
+
+def print_status(message: str) -> None:
+    print(f"{dt.datetime.now().isoformat(timespec='seconds')} {message}", flush=True)
+
+
+ENV_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+print_status(f"Loading env file: {ENV_FILE_PATH}")
+if load_dotenv(ENV_FILE_PATH):
+    print_status("Env file loaded successfully")
+else:
+    print_status("Env file not found or no values loaded")
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+def required_env(name: str) -> str:
+    value = os.getenv(name)
+    if value is None or value == "":
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+def required_int_env(name: str) -> int:
+    value = required_env(name)
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise RuntimeError(f"Environment variable {name} must be an integer.") from exc
+
+
+DB_SERVER = required_env("DB_SERVER")
+DB_DATABASE = required_env("DB_DATABASE")
+DB_USERNAME = required_env("DB_USERNAME")
+DB_PASSWORD = required_env("DB_PASSWORD")
+DB_DRIVER = required_env("DB_DRIVER")
+
+MAIN_TABLE = required_env("MAIN_TABLE")
+ARCHIVE_TABLE = required_env("ARCHIVE_TABLE")
+DATE_COLUMN = required_env("DATE_COLUMN")
+
+RETENTION_DAYS = required_int_env("RETENTION_DAYS")
+WINDOW_START_HOUR = required_int_env("WINDOW_START_HOUR")
+WINDOW_END_HOUR = required_int_env("WINDOW_END_HOUR")
+
+ERROR_RETRY_SECONDS = required_int_env("ERROR_RETRY_SECONDS")
+IDLE_SLEEP_SECONDS = required_int_env("IDLE_SLEEP_SECONDS")
+OUTSIDE_WINDOW_SLEEP_SECONDS = required_int_env("OUTSIDE_WINDOW_SLEEP_SECONDS")
+
+LOG_FILE = required_env("LOG_FILE")
+print_status(
+    "Env values read: "
+    f"DB_SERVER={DB_SERVER}, "
+    f"DB_DATABASE={DB_DATABASE}, "
+    f"DB_USERNAME={DB_USERNAME}, "
+    f"DB_DRIVER={DB_DRIVER}, "
+    f"MAIN_TABLE={MAIN_TABLE}, "
+    f"ARCHIVE_TABLE={ARCHIVE_TABLE}, "
+    f"DATE_COLUMN={DATE_COLUMN}, "
+    f"RETENTION_DAYS={RETENTION_DAYS}, "
+    f"WINDOW={WINDOW_START_HOUR}:00-{WINDOW_END_HOUR}:00, "
+    f"LOG_FILE={LOG_FILE}"
+)
+
+
+def setup_logger() -> logging.Logger:
+    log_dir = os.path.dirname(LOG_FILE)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+        print_status(f"Log directory ready: {log_dir}")
+
+    logger = logging.getLogger("dbmigrate")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+    if not logger.handlers:
+        handler = RotatingFileHandler(LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5)
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        logger.addHandler(handler)
+
+    return logger
+
+
+LOGGER = setup_logger()
+print_status("Logger initialized")
+
+
+def quoted_identifier(name: str) -> str:
+    return "[" + name.replace("]", "]]") + "]"
+
+
+def table_parts(table_name: str) -> Tuple[str, str]:
+    if "." in table_name:
+        schema, table = table_name.split(".", 1)
+        return schema, table
+    return "dbo", table_name
+
+
+def quoted_table(table_name: str) -> str:
+    schema, table = table_parts(table_name)
+    return f"{quoted_identifier(schema)}.{quoted_identifier(table)}"
+
+
+def build_connection_string() -> str:
+    return (
+        f"DRIVER={{{DB_DRIVER}}};"
+        f"SERVER={DB_SERVER};"
+        f"DATABASE={DB_DATABASE};"
+        f"UID={DB_USERNAME};"
+        f"PWD={DB_PASSWORD};"
+        "TrustServerCertificate=yes;"
+    )
+
+
+def connect() -> pyodbc.Connection:
+    print_status(f"Connecting to database: server={DB_SERVER}, database={DB_DATABASE}")
+    connection = pyodbc.connect(build_connection_string(), autocommit=False)
+    connection.timeout = 60
+    print_status("Database connection established")
+    return connection
+
+
+def is_processing_window(now: Optional[dt.datetime] = None) -> bool:
+    current = now or dt.datetime.now()
+    hour = current.hour
+    return hour >= WINDOW_START_HOUR or hour < WINDOW_END_HOUR
+
+
+def seconds_until_window_start(now: Optional[dt.datetime] = None) -> int:
+    current = now or dt.datetime.now()
+    today_start = current.replace(
+        hour=WINDOW_START_HOUR,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    next_start = today_start if current < today_start else today_start + dt.timedelta(days=1)
+    return max(1, int((next_start - current).total_seconds()))
+
+
+def retention_cutoff() -> dt.date:
+    return (dt.datetime.now() - dt.timedelta(days=RETENTION_DAYS)).date()
+
+
+def archive_one_row(connection: pyodbc.Connection) -> bool:
+    if not is_processing_window():
+        return False
+
+    cursor = connection.cursor()
+    cutoff = retention_cutoff()
+
+    quoted_date_column = quoted_identifier(DATE_COLUMN)
+    date_expression = f"CAST({quoted_date_column} AS DATE)"
+    main_table = quoted_table(MAIN_TABLE)
+    archive_table = quoted_table(ARCHIVE_TABLE)
+
+    cursor.execute(
+        f"""
+        SET NOCOUNT ON;
+
+        WITH row_to_archive AS (
+            SELECT TOP (1) *
+            FROM {main_table} WITH (READPAST, UPDLOCK, ROWLOCK)
+            WHERE {date_expression} < ?
+            ORDER BY {date_expression} ASC
+        )
+        DELETE FROM row_to_archive
+        OUTPUT deleted.*
+        INTO {archive_table};
+
+        SELECT @@ROWCOUNT AS archived_rows;
+        """,
+        cutoff,
+    )
+
+    row = cursor.fetchone()
+    archived_rows = row[0] if row else 0
+
+    if archived_rows == 0:
+        connection.rollback()
+        print_status("No eligible rows found to archive")
+        return False
+
+    connection.commit()
+    print_status(f"Archived and deleted 1 row; cutoff_date={cutoff}")
+    return True
+
+
+def append_daily_summary(
+    window_date: dt.date,
+    migrated_rows: int,
+    error_count: int,
+    last_error: Optional[str],
+) -> None:
+    if error_count:
+        print_status(
+            f"Daily summary written with errors: date={window_date.isoformat()}, "
+            f"migrated_rows={migrated_rows}, errors={error_count}"
+        )
+        LOGGER.error(
+            "summary_date=%s migrated_rows=%s errors=%s last_error=%s action=will_retry_next_window",
+            window_date.isoformat(),
+            migrated_rows,
+            error_count,
+            last_error,
+        )
+        return
+
+    print_status(f"Daily summary written: date={window_date.isoformat()}, migrated_rows={migrated_rows}, errors=0")
+    LOGGER.info(
+        "summary_date=%s migrated_rows=%s errors=0",
+        window_date.isoformat(),
+        migrated_rows,
+    )
+
+
+def current_window_date(now: Optional[dt.datetime] = None) -> dt.date:
+    current = now or dt.datetime.now()
+    if current.hour < WINDOW_END_HOUR:
+        return (current - dt.timedelta(days=1)).date()
+    return current.date()
+
+
+def run() -> int:
+    migrated_rows = 0
+    error_count = 0
+    last_error = None
+    active_window_date = None
+    summary_written_for = None
+
+    print_status("dbmigrate started")
+    print_status(f"Processing window is {WINDOW_START_HOUR}:00 to {WINDOW_END_HOUR}:00")
+    LOGGER.info(
+        "dbmigrate started; processing window is %s:00 to %s:00",
+        WINDOW_START_HOUR,
+        WINDOW_END_HOUR,
+    )
+
+    while True:
+        now = dt.datetime.now()
+
+        if not is_processing_window(now):
+            if active_window_date and summary_written_for != active_window_date:
+                append_daily_summary(active_window_date, migrated_rows, error_count, last_error)
+                summary_written_for = active_window_date
+                migrated_rows = 0
+                error_count = 0
+                last_error = None
+                active_window_date = None
+
+            sleep_for = min(OUTSIDE_WINDOW_SLEEP_SECONDS, seconds_until_window_start(now))
+            print_status(f"Outside processing window; sleeping for {sleep_for} seconds")
+            time.sleep(sleep_for)
+            continue
+
+        window_date = current_window_date(now)
+        if active_window_date != window_date:
+            print_status(f"Starting processing window for date={window_date.isoformat()}")
+            active_window_date = window_date
+            summary_written_for = None
+            migrated_rows = 0
+            error_count = 0
+            last_error = None
+
+        try:
+            with connect() as connection:
+                while is_processing_window():
+                    did_archive = archive_one_row(connection)
+                    if did_archive:
+                        migrated_rows += 1
+                    else:
+                        print_status(f"Sleeping for {IDLE_SLEEP_SECONDS} seconds before checking again")
+                        time.sleep(IDLE_SLEEP_SECONDS)
+
+        except Exception as exc:
+            error_count += 1
+            last_error = str(exc)
+            print_status(
+                f"Error occurred: {last_error}; migrated_rows_so_far={migrated_rows}; "
+                f"retrying_after={ERROR_RETRY_SECONDS} seconds"
+            )
+            LOGGER.error(
+                "error=%s migrated_rows_so_far=%s action=retrying_after_%s_seconds",
+                last_error,
+                migrated_rows,
+                ERROR_RETRY_SECONDS,
+            )
+            time.sleep(ERROR_RETRY_SECONDS)
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(run())
+    except KeyboardInterrupt:
+        LOGGER.info("dbmigrate stopped by KeyboardInterrupt")
+        raise SystemExit(0)
+
+
+
+----------------------------------------------------------------------------------------------
+
+
+  pyodbc
+python-dotenv
+
+
+--------------------------------------------------------------------------------------------------
+
+
+  [Unit]
+Description=IPRUAssist query archive migration service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=60
+StartLimitBurst=5
+User=ipruvm
+ExecStart=/usr/bin/python3 /opt/dbmigrate/dbmigrate.py
+
+[Install]
+WantedBy=multi-user.target
