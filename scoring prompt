@@ -1,0 +1,166 @@
+You must evaluate ALL scenarios in a SINGLE response using the transcript below.
+
+Transcript:
+{transcript}
+
+Scenarios to evaluate:
+{scenario_list}
+
+===================================================================
+STEP 0 — SECTION B: FAILURE PARAMETER CHECK (MANDATORY, RUN FIRST, HIGHEST PRIORITY)
+===================================================================
+Before scoring any Section A scenario, you MUST first silently check the transcript against
+the 5 Section B Failure Parameters below. This check OVERRIDES every other rule in this
+prompt, including the Global Scoring Decision Rule and all individual scenario definitions.
+
+FAILURE PARAMETERS (Y = violated / N = not violated):
+
+1. "No misselling"
+   - Recommending equity schemes for less than 3 years.
+   - Guaranteeing future returns of the funds.
+
+2. "FA Check"
+   - Direct Business: pitching is mandatory to be done by RM (not skipped).
+   - I-Bank: Only I-Bank RM/VRM can pitch. Apart from I-Bank, VRM should NOT pitch on call.
+   - UAE: For IFA investors, only a service call is allowed — no sales pitch.
+
+3. "No Discussions on switches from regular to direct"
+   - RM upfront recommends/suggests switching funds from Regular Plan to Direct Plan.
+   - Investor asks whether they should switch from regular to direct, and RM gives a
+     suggestion instead of stating it is entirely the investor's choice.
+
+4. "Do not demean any of our existing product"
+   - RM bad-mouths or says anything negative about the company's own funds.
+
+5. "Do not send transaction link without investor's consent"
+   - Investor persistently declines/denies the prefilled transaction link, but RM keeps
+     pushing/insisting on sending it anyway.
+
+DECISION RULE FOR SECTION B (OVERRIDE RULE):
+- If the transcript shows a clear violation of ANY ONE of the 5 Failure Parameters above,
+  then EVERY Section A scenario in {scenario_list} must be scored "0" — including the
+  scenario whose normal allowed scores are "0"/"20"/"N/A" (it must also be forced to "0",
+  never "20", never "N/A").
+- In this case, do NOT apply the Global Scoring Decision Rule or the individual scenario
+  definitions below at all. Skip straight to output.
+- Every "reason" field in the output must then state that the call failed on a Section B
+  parameter, naming which one (e.g., "Scored 0 — Section B failure: RM sent the transaction
+  link despite the investor repeatedly declining consent.").
+- If NONE of the 5 Failure Parameters are violated, proceed normally to STEP 1 below and
+  score each Section A scenario on its own merits.
+
+===================================================================
+STEP 1 — SECTION A: SCENARIO SCORING (ONLY IF NO SECTION B FAILURE WAS FOUND)
+===================================================================
+
+STRICT OUTPUT REQUIREMENTS:
+1. Return ONLY valid JSON.
+2. Do NOT include markdown, code fences, or extra commentary.
+3. Top-level JSON must be an object where each key is EXACTLY the scenario name.
+4. Each scenario value must be an object with exactly these keys:
+    - "score"
+    - "reason"
+5. Score must follow the scenario-wise allowed values listed below.
+6. The "score" value must ALWAYS be a JSON string, never a JSON number/integer. Write "0",
+   "10", "20", or "N/A" wrapped in double quotes exactly like that. Do NOT output 0, 10, 20
+   as unquoted numeric types under any circumstance — this will break downstream parsing.
+7. Do not add extra top-level keys.
+8. Do NOT add a separate key/object for Section B — it is a silent internal check only.
+   Its outcome is reflected purely by forcing Section A scores to "0" (per STEP 0) and
+   explaining this in each "reason" field.
+
+SCENARIO-WISE ALLOWED SCORES:
+- "Opening / Greeting / Introduction": "0", "10", "N/A"
+- "Portfolio Update": "0", "10", "N/A"
+- "Market Update": "0", "10", "N/A"
+- "Identify Investment approach & Risk Profile of Investor": "0", "10", "N/A"
+- "Appropriate Product Recommendations and Product pitch": "0", "10", "N/A"
+- "Transition from information to sales & asked for transaction": "0", "20", "N/A"
+- "Amount specific Upselling conversation": "0", "10", "N/A"
+- "Send transaction link / Ugency creation": "0", "10", "N/A"
+- "On call Conversion / Closure": "0", "10", "N/A"
+
+GLOBAL SCORING DECISION RULE (HIGHEST PRIORITY WITHIN SECTION A, APPLIES ONLY IF STEP 0 DID NOT TRIGGER):
+1. If RM had a clear chance/opportunity to cover that scenario but did not speak about it, score must be "0".
+2. If RM spoke and covered that scenario meaningfully:
+   - For all scenarios EXCEPT "Transition from information to sales & asked for transaction", score must be "10".
+   - For "Transition from information to sales & asked for transaction" ONLY, score must be "20".
+3. If RM did not get a fair chance/opportunity to cover that scenario and therefore did not speak, score must be "N/A".
+4. This chance-based rule overrides generic "else 0" behavior wherever applicable.
+5. No other numeric values are allowed. Every scenario is strictly "0" or "N/A", and its scenario-specific positive value ("10" for all scenarios except Transition, "20" only for Transition).
+6. Every one of these values must be written as a JSON string in double quotes ("0", "10", "20", "N/A") — never as a bare/unquoted JSON number.
+
+Required JSON shape (note "score" is always a quoted string, e.g. "0", "10", "20", "N/A" —
+never an unquoted number):
+{
+    "<scenario_name>": {
+        "score": "0",
+        "reason": "<short reason>"
+    }
+}
+
+Scoring Definitions:
+
+1. "Opening / Greeting / Introduction": In this module, an "Opening" would be defined as the
+Sales RM greeting himself to the Investor or confirming his name or asking whether it's a
+right time to speak. If he has done any of the following then mark the value as "10" else
+"0". If it's a follow-up call which does not curtail to a greeting or opening then mark it
+as "N/A".
+
+2. "Portfolio Update": In this module, the RM discusses with the Customer regarding his
+existing investment and explains him/her regarding his portfolio in detail or talks about
+the Customer's historical investment. Simply asking to discuss the same should not be
+counted. A proper two-way conversation must happen on the same. If he has done any of the
+following then mark the value as "10" else "0". If the customer on call is angry or irate or
+unhappy, then it is fine to not talk about existing investment and can be marked as "N/A".
+
+3. "Market Update": In this module, the RM discusses with the Customer regarding the current
+market situation, economy situation, etc., in detail. Simply asking to discuss the same
+should not be counted. A proper two-way conversation must happen on the same. If he has done
+any of the following then mark the value as "10" else "0". If it's a follow-up call which
+does not curtail to a greeting or opening then mark it as "N/A" or if the customer on call is
+angry or irate or unhappy then it is fine to not talk about existing investment and can be
+marked as "N/A" or if the customer got convinced to invest without having to speak about
+market then mark it as "N/A".
+
+4. "Identify Investment approach & Risk Profile of Investor": In this module, the RM
+discusses with the Customer regarding his investment approach or risk appetite or his goal of
+investment. Simply asking to discuss the same should not be counted. A proper two-way
+conversation must happen on the same. If he has done any of the following then mark the value
+as "10" else "0". If it's a follow-up call which does not curtail to a greeting or opening
+then mark it as "N/A" or if the customer on call is angry or irate or unhappy then it is fine
+to not talk about existing investment and can be marked as "N/A" or if the customer
+proactively mentioned his approach or risk profile before talking about then mark it as
+"N/A".
+
+5. "Appropriate Product Recommendations and Product pitch": In this module, the RM discussed
+with the Customer on a possible product recommendation gap and a new product pitch for ICICI
+Prudential related funds at least in a few lines as a proper product pitch. Simply asking to
+discuss the same should not be counted. A proper two-way conversation must happen on the
+same. If he has done any of the following then mark the value as "10" else "0". If the
+customer on call is angry or irate or unhappy then it is fine to not talk about existing
+investment and can be marked as "N/A". If the customer already has decided on an existing
+fund then mark it as "N/A".
+
+6. "Transition from information to sales & asked for transaction": In this module, the RM
+tried to convince the Customer to make a transaction once he was convinced to invest in a
+pitched fund or otherwise. If he has done any of the following then mark the value as "20"
+else "0". If the customer on call is angry or irate or unhappy then it is fine to not talk
+about existing investment and can be marked as "N/A". If the customer already has decided on
+an existing fund then mark it as "N/A". If he has already invested a few days ago then mark
+it as "N/A". During the fund pitch itself, the investor says he is not interested then mark
+it as "N/A".
+
+7. "Amount specific Upselling conversation": In this module, the RM tried to upsell on the
+investor's existing investment on his/her SIP or investment amount. If he has done any of the
+following then mark the value as "10" else "0". If the investor had pre-decided on the amount
+then mark it as "N/A".
+
+8. "Send transaction link / Ugency creation": In this module, the RM sent the transaction
+link or created urgency for the investor to invest by providing specific benefits for
+immediate action. If he has done any of the following then mark the value as "10" else "0".
+If it isn't applicable as a call then mark it as "N/A".
+
+9. "On call Conversion / Closure": In this module, the RM tried to convert and close the
+investment on call. If he has done any of the following then mark the value as "10" else
+"0". If it isn't applicable as a call then mark it as "N/A".
