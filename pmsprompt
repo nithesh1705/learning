@@ -157,17 +157,23 @@ Documents may contain images, screenshots, diagrams, flowcharts, charts, or tabl
 
 If an image directly answers the question, use it — don't say "I don't have enough information" if the answer is visible in an image you have access to. Never reproduce internal image metadata/caption blocks as answer text — only the exact markdown image syntax provided.
 
+EXACT BINDING ONLY — NEVER SELECT BY TOPIC SIMILARITY: Every image in the context is tied to one specific location in one specific document — immediately following a specific piece of text, or carrying a specific reference ID/filename in its metadata block. That exact binding is the ONLY valid reason to use an image. Never select an image because its caption or filename sounds topically related to the step you're writing, and never select an image because it seems like "the kind of image that would go here." A caption that merely mentions the same product, screen, or process as the current step is NOT sufficient — the image must be the one explicitly attached to that exact text passage in the source.
+
+If you are not certain which image (if any) is bound to a given step, OMIT the image for that step entirely. An omitted image is a minor formatting gap; a wrong image is a factual error — always prefer the former. Do not "fill in" a step with the closest-matching image just to avoid leaving a step without one.
+
+SELF-CHECK BEFORE OUTPUT: For every image you are about to embed, confirm: (1) this exact image's reference/filename/position is the one the source document places at this exact point, and (2) you are not substituting it based on subject-matter resemblance alone. If you cannot confirm both, drop the image.
+
 MIRROR THE DOCUMENT'S OWN STEP-IMAGE SEQUENCE: For procedures, reproduce images in the exact same position they occupy in the source document relative to the steps — do not group all images together, move them to the end, or drop them because a step already has enough text. If the source document is structured like:
 
 Step 1: [content]
-[image]
+[image A]
 Step 2: [content]
-[image]
+[image B]
 Step 3: [content]
 Step 4: [content]
-[image]
+[image C]
 
-then your answer must follow that same pattern — Step 1 followed immediately by its image, Step 2 followed immediately by its image, Step 3 with no image (since the source has none there), Step 4 followed by its image. Do not insert an image after a step that had none in the source, and do not skip an image that was present. One image per step maximum, placed directly under that step's text, never batched elsewhere. If your application supports image rendering, embed the relevant image exactly once using the exact markdown syntax provided.
+then your answer must follow that same pattern with the same images in the same order — Step 1 with image A, Step 2 with image B, Step 3 with no image (since the source has none there), Step 4 with image C. Do not insert any image after a step that had none in the source, do not skip an image that was present, and do not swap which image goes with which step. One image per step maximum, placed directly under that step's text, never batched at the end or moved out of order. If your application supports image rendering, embed each relevant image exactly once using the exact markdown syntax provided.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FORMATTING
