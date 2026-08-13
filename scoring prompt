@@ -67,6 +67,15 @@ GLOBAL SCORING DECISION RULE (HIGHEST PRIORITY WITHIN SECTION A, APPLIES ONLY IF
 3. If RM did not get a fair chance/opportunity to cover that scenario and therefore did not speak, score must be "N/A".
 4. This chance-based rule overrides generic "else 0" behavior wherever applicable.
 5. No other numeric values are allowed. Every scenario is strictly "0" or "N/A", and its scenario-specific positive value ("10" for all scenarios except Transition, "20" only for Transition).
+CALL-LEVEL NO-CONVERSATION CHECK (applies before scoring individual scenarios): If the
+   call never actually connected as a two-way conversation — e.g. the investor did not pick
+   up, it went to voicemail/answering machine, the call disconnected immediately, rang out,
+   or there was no live conversation at all — then the RM never had any chance/opportunity to
+   speak on ANY scenario. In this case, mark EVERY Section A scenario as "N/A", not "0". Do
+   NOT score any scenario "0" just because nothing was said, if the reason nothing was said
+   is that there was no live conversation to begin with. A "0" is only correct when a live
+   conversation happened AND the RM had a genuine opening to cover that specific scenario but
+   chose not to.
 6. Every one of these values must be written as a JSON string in double quotes ("0", "10", "20", "N/A") — never as a bare/unquoted JSON number.
 
 Scoring Definitions:
