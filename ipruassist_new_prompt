@@ -1,0 +1,1281 @@
+# IPRU Assist New – Modern Unified AI Workspace
+
+## Objective
+
+We already have an existing frontend application called **IPRU Assist** used by employees of **ICICI Prudential AMC**.
+
+The existing application contains multiple pages/modules:
+
+* Dashboard
+* IPRU GPT
+* PMS Assist
+* PST Assist
+* Investment Assist
+* Sales Assist
+* Compliance Assist
+* Finance Assist
+
+Do **not modify, break, redesign, or replace any of the existing pages**.
+
+We now need to create a **new page/module named `IPRU Assist New`** inside the existing application.
+
+The goal is to build a **modern, advanced, unified AI workspace** that combines the existing **IPRU GPT multi-model chat experience** with selectable AI Assistants and AI features from a single chat interface.
+
+The new page should feel like a modern enterprise AI product rather than simply another existing page.
+
+---
+
+# 1. Project Structure
+
+Create a new project/module:
+
+```text
+src/projects/IPru Assist New/
+```
+
+Follow the existing project's folder and coding conventions.
+
+Before implementing anything:
+
+1. Inspect the existing `IPRU GPT` frontend implementation.
+2. Understand its:
+
+   * Components
+   * Folder structure
+   * State management
+   * API/service layer
+   * Multi-model implementation
+   * Chat UI
+   * Message handling
+   * Loading states
+   * Error handling
+   * File handling
+   * Authentication/context handling
+3. Inspect the existing **PMS Assist** frontend.
+4. Understand exactly how PMS Assist communicates with its backend.
+5. Inspect the existing **PST Assist** frontend.
+6. Understand exactly how PST Assist communicates with its backend.
+
+Reuse existing utilities, API patterns, authentication mechanisms, types, components, and styling wherever appropriate.
+
+Do not unnecessarily duplicate existing global functionality.
+
+The new page should initially be based on the existing **IPRU GPT** implementation because IPRU GPT already provides the core multi-model AI chat experience.
+
+Think of this as:
+
+```text
+Existing IPRU GPT
+        +
+Assistant Routing
+        +
+Feature Routing
+        +
+Modern UX
+        =
+IPRU Assist New
+```
+
+---
+
+# 2. Core Experience
+
+`IPRU Assist New` should be a **single unified chat workspace**.
+
+Normally, when the user opens the page, it behaves exactly like a normal AI chat:
+
+```text
+User → Select AI Model → Ask Question → IPRU GPT Backend
+```
+
+However, the user can dynamically activate additional **Features** or **Assists** directly from the chat input.
+
+The system must support:
+
+### Features
+
+* Chat with PDF
+* Chat with Excel
+
+### Assists
+
+* PMS Assist
+* PST Assist
+
+Future features/assists should be easy to add without restructuring the entire application.
+
+---
+
+# 3. Chat Input – "+" Button
+
+Add a **`+` button on the left side of the chat input**.
+
+When clicked, show a menu similar to:
+
+```text
+┌─────────────────────────────┐
+│ +  Add files                │
+├─────────────────────────────┤
+│ FEATURES                    │
+│   Chat with PDF             │
+│   Chat with Excel           │
+├─────────────────────────────┤
+│ ASSISTS                     │
+│   PMS Assist                │
+│   PST Assist                │
+└─────────────────────────────┘
+```
+
+The menu should be modern, compact, keyboard accessible, and visually consistent with the rest of IPRU Assist.
+
+Each item should have an appropriate icon.
+
+---
+
+# 4. Slash and @ Command System
+
+Users should be able to access Assistants and Features directly from the chat input.
+
+Use:
+
+```text
+/ → Assist
+@ → Feature
+```
+
+Examples:
+
+```text
+/pms-assist
+/pst-assist
+@chat-with-pdf
+@chat-with-excel
+```
+
+The command system should work similarly to modern AI applications such as command palettes / mention selectors.
+
+---
+
+# 5. Dynamic Command Suggestions
+
+When the user types:
+
+```text
+@
+```
+
+automatically open the feature suggestion menu.
+
+Show:
+
+```text
+Chat with PDF
+Chat with Excel
+```
+
+If the user types:
+
+```text
+@c
+```
+
+filter the available features.
+
+For example:
+
+```text
+@c
+
+Chat with Excel
+Chat with PDF
+```
+
+If the user types:
+
+```text
+@chat-with-e
+```
+
+the matching option should be:
+
+```text
+Chat with Excel
+```
+
+The filtering must happen dynamically as the user types.
+
+Similarly, when the user types:
+
+```text
+/
+```
+
+show the available assistants:
+
+```text
+PMS Assist
+PST Assist
+```
+
+---
+
+# 6. Keyboard Navigation
+
+The command selector must be fully keyboard accessible.
+
+Support:
+
+### Arrow Down
+
+Move selection to the next option.
+
+### Arrow Up
+
+Move selection to the previous option.
+
+### Enter
+
+Select the highlighted option.
+
+### Tab
+
+Select/complete the highlighted option.
+
+### Escape
+
+Close the command menu.
+
+### Typing
+
+Continue filtering the available options.
+
+Example:
+
+```text
+@chat-with-e
+```
+
+Then:
+
+```text
+Tab
+```
+
+should complete:
+
+```text
+@chat-with-excel
+```
+
+The user should then be able to continue typing naturally:
+
+```text
+@chat-with-excel analyze the revenue data for Q1
+```
+
+The command selector must not interfere with normal typing.
+
+---
+
+# 7. Command Selection Behavior
+
+When the user selects an item using `/` or `@`, do not simply treat it as normal text.
+
+The frontend should parse the command and identify:
+
+```text
+Command Type
+    ↓
+Feature / Assist
+    ↓
+Selected Module
+    ↓
+Backend/API Route
+```
+
+For example:
+
+```text
+/pms-assist
+```
+
+must internally resolve to:
+
+```text
+type: assist
+name: pms-assist
+backend: PMS Assist backend
+```
+
+And:
+
+```text
+@chat-with-pdf
+```
+
+must resolve to:
+
+```text
+type: feature
+name: chat-with-pdf
+backend: PDF processing/chat backend
+```
+
+Do not hardcode routing logic throughout UI components.
+
+Create a centralized configuration/registry so that new features and assists can be added easily.
+
+For example, conceptually:
+
+```text
+Assist/Feature Registry
+    PMS Assist → PMS backend
+    PST Assist → PST backend
+    Chat with PDF → PDF backend
+    Chat with Excel → Excel backend
+```
+
+The actual implementation should follow the existing project's architecture.
+
+---
+
+# 8. Assistant Selection UX
+
+When an assistant is selected, the selected assistant should **not remain as part of the visible user prompt**.
+
+For example, the user types:
+
+```text
+/pst-assist
+What is the current status of this portfolio?
+```
+
+After selecting PST Assist, the UI should transform into something like:
+
+```text
+┌─────────────────────────────────────────────┐
+│ ✦ Chatting with PST Assist                  │
+├─────────────────────────────────────────────┤
+│ What is the current status of this portfolio?│
+└─────────────────────────────────────────────┘
+```
+
+Or display the selected assistant as a compact chip/context indicator above the input.
+
+Example:
+
+```text
+[PST Assist ×]
+
+What is the current status of this portfolio?
+```
+
+The important requirement is:
+
+**The `/pst-assist` command itself should not be sent as part of the user's actual prompt.**
+
+Instead, the frontend should maintain the selected assistant separately:
+
+```text
+selectedAssist = "pst-assist"
+prompt = "What is the current status of this portfolio?"
+```
+
+Then route the request to the PST Assist backend.
+
+---
+
+# 9. Assistant Context Indicator
+
+When an assistant is active, clearly show it near the chat input.
+
+Examples:
+
+```text
+✦ You are chatting with PMS Assist
+```
+
+or preferably a compact modern chip:
+
+```text
+[PMS Assist ×]
+```
+
+The user should immediately understand which assistant will answer the next message.
+
+The user must also be able to remove the selected assistant using `×`.
+
+After removing it, the chat should return to normal IPRU GPT behavior.
+
+---
+
+# 10. Feature Selection
+
+Features work similarly but may behave differently from Assistants.
+
+For example:
+
+```text
+@chat-with-pdf
+```
+
+should activate PDF chat functionality.
+
+The UI should clearly indicate that the selected feature is active.
+
+For example:
+
+```text
+[Chat with PDF ×]
+```
+
+The user can then upload/select a PDF and ask questions against it.
+
+Similarly:
+
+```text
+@chat-with-excel
+```
+
+activates Excel-related functionality.
+
+---
+
+# 11. Backend Routing
+
+This is one of the most important requirements.
+
+Each Assistant/Feature has its **own backend**.
+
+Therefore, do not send every request to the IPRU GPT backend.
+
+The frontend must determine the active context before making the API request.
+
+### No selection
+
+```text
+User Prompt
+    ↓
+Normal IPRU GPT backend
+```
+
+### PMS Assist selected
+
+```text
+User Prompt
+    ↓
+PMS Assist backend
+```
+
+### PST Assist selected
+
+```text
+User Prompt
+    ↓
+PST Assist backend
+```
+
+### Chat with PDF selected
+
+```text
+User Prompt + PDF
+    ↓
+PDF backend
+```
+
+### Chat with Excel selected
+
+```text
+User Prompt + Excel
+    ↓
+Excel backend
+```
+
+Reuse the existing PMS Assist and PST Assist frontend API implementations to ensure the new page calls their backends correctly.
+
+Do not guess or recreate their API contracts.
+
+---
+
+# 12. Multi-Model Support
+
+The existing IPRU GPT supports multiple AI models.
+
+Preserve this functionality in `IPRU Assist New`.
+
+The user should still be able to select/use the supported AI models when operating in normal IPRU GPT mode.
+
+Do not remove existing model-selection functionality.
+
+However, when an Assistant or Feature has its own backend/model, respect that backend's existing architecture.
+
+Do not force the IPRU GPT model selector onto an Assistant if that Assistant's backend does not support it.
+
+---
+
+# 13. Normal Chat Behavior
+
+If the user does not select anything:
+
+```text
+Hello
+```
+
+the application must behave as a normal IPRU GPT chat.
+
+Example:
+
+```text
+User
+ ↓
+IPRU Assist New
+ ↓
+No Feature / Assist selected
+ ↓
+IPRU GPT backend
+ ↓
+Selected AI model
+ ↓
+Response
+```
+
+Existing IPRU GPT functionality should remain intact.
+
+---
+
+# 14. Important Command Parsing Rule
+
+The user may type commands **anywhere in the input**, not only at the beginning.
+
+For example:
+
+```text
+Can you check this using /pms-assist
+```
+
+or:
+
+```text
+Please analyze this @chat-with-excel file
+```
+
+The frontend should detect the command intelligently.
+
+However, once the user selects/completes the command, convert it into structured application state rather than treating it as ordinary text.
+
+The final backend prompt should contain only the actual user request.
+
+Example:
+
+```text
+Input:
+"Can you check this using /pms-assist"
+
+Internal state:
+selectedAssist = "pms-assist"
+
+Actual prompt:
+"Can you check this"
+```
+
+Do not send:
+
+```text
+"Can you check this using /pms-assist"
+```
+
+to the PMS backend unless the existing backend specifically requires it.
+
+---
+
+# 15. Multiple Commands / Context
+
+Design the architecture so that multiple features/assists can eventually be supported.
+
+For the initial implementation, clearly define whether only one active Assist/Feature is allowed at a time.
+
+Prefer:
+
+```text
+One active Assist/Feature per message
+```
+
+for the initial version to avoid backend ambiguity.
+
+If the user selects another Assist/Feature, replace the existing context.
+
+Example:
+
+```text
+[PMS Assist ×]
+```
+
+then user selects:
+
+```text
+PST Assist
+```
+
+result:
+
+```text
+[PST Assist ×]
+```
+
+---
+
+# 16. Add Files
+
+The first option in the `+` menu should be:
+
+```text
+Add files
+```
+
+This should integrate with the existing application's file upload capabilities wherever available.
+
+Do not create a completely separate upload mechanism if an existing reusable upload component/service already exists.
+
+The architecture should support future file types.
+
+---
+
+# 17. Modern UI/UX
+
+This page should look significantly more modern than the existing legacy pages.
+
+Design it as a modern enterprise AI workspace.
+
+Desired characteristics:
+
+* Clean layout
+* Spacious chat area
+* Modern typography
+* Minimal visual clutter
+* Smooth transitions
+* Rounded components
+* Modern command menu
+* Assistant/feature chips
+* Keyboard-first interaction
+* Clear loading states
+* Streaming response support if already available
+* Good empty state
+* Responsive design
+* Desktop-first but responsive
+* Professional enterprise appearance
+* Avoid excessive gradients or flashy consumer-AI styling
+* Maintain ICICI Prudential AMC brand consistency
+
+The UI should feel like a polished internal AI platform.
+
+---
+
+# 18. Empty State
+
+When there is no conversation, create a modern landing/empty state.
+
+Example concept:
+
+```text
+                 IPRU Assist
+
+       Your AI workspace for everyday work
+
+   Ask questions, analyze documents, or use
+       specialized IPRU AI Assistants.
+
+ ┌───────────────────────────────────────────┐
+ │ +   Ask anything...                       │
+ └───────────────────────────────────────────┘
+
+    / PMS Assist     / PST Assist
+    @ Chat with PDF  @ Chat with Excel
+```
+
+This is only a conceptual direction. Improve the actual design based on the existing application's visual language.
+
+---
+
+# 19. Architecture Requirements
+
+Keep responsibilities separated.
+
+Prefer a structure conceptually similar to:
+
+```text
+src/
+└── projects/
+    └── IPru Assist New/
+        ├── components/
+        │   ├── Chat/
+        │   ├── ChatInput/
+        │   ├── CommandMenu/
+        │   ├── AssistSelector/
+        │   ├── FeatureSelector/
+        │   ├── FileUpload/
+        │   └── ...
+        │
+        ├── services/
+        │   ├── ipruGptService
+        │   ├── pmsAssistService
+        │   ├── pstAssistService
+        │   ├── pdfService
+        │   └── excelService
+        │
+        ├── config/
+        │   └── assistRegistry
+        │
+        ├── hooks/
+        │   ├── useCommandMenu
+        │   ├── useChat
+        │   └── ...
+        │
+        ├── types/
+        │   └── ...
+        │
+        ├── utils/
+        │   ├── commandParser
+        │   └── ...
+        │
+        └── ...
+```
+
+This is a guideline, not a requirement to blindly copy this exact structure.
+
+Follow the existing repository conventions wherever they are better.
+
+---
+
+# 20. Registry-Based Design
+
+Do not implement:
+
+```text
+if command === "pms-assist"
+...
+else if command === "pst-assist"
+...
+else if command === "chat-with-pdf"
+...
+```
+
+throughout multiple components.
+
+Instead, create a centralized registry/configuration.
+
+Conceptually:
+
+```text
+{
+  id: "pms-assist",
+  type: "assist",
+  label: "PMS Assist",
+  trigger: "/",
+  description: "...",
+  backend: "pms"
+}
+```
+
+and:
+
+```text
+{
+  id: "chat-with-pdf",
+  type: "feature",
+  label: "Chat with PDF",
+  trigger: "@",
+  description: "...",
+  backend: "pdf"
+}
+```
+
+This should make future additions straightforward.
+
+---
+
+# 21. Existing Code Reuse
+
+Before writing new code, inspect and reuse:
+
+### IPRU GPT
+
+For:
+
+* Chat UI
+* Multi-model support
+* Message rendering
+* API communication
+* Chat state
+* Streaming
+* Authentication
+* Error handling
+* Existing reusable components
+
+### PMS Assist
+
+For:
+
+* API endpoint
+* Request payload
+* Authentication
+* Headers
+* Response handling
+* Streaming/non-streaming behavior
+* Error handling
+
+### PST Assist
+
+For:
+
+* API endpoint
+* Request payload
+* Authentication
+* Headers
+* Response handling
+* Streaming/non-streaming behavior
+* Error handling
+
+Do not assume their API contracts.
+
+Read the existing code and integrate with the actual implementation.
+
+---
+
+# 22. Do Not Break Existing Application
+
+This is critical.
+
+The implementation must:
+
+* Add only the new `IPRU Assist New` page/module.
+* Avoid modifying existing pages unless absolutely required for routing/navigation.
+* Avoid changing existing API behavior.
+* Avoid changing existing PMS Assist implementation.
+* Avoid changing existing PST Assist implementation.
+* Avoid changing existing IPRU GPT behavior.
+* Avoid introducing global CSS that can affect existing pages.
+* Scope new styles/components appropriately.
+* Reuse existing shared components where safe.
+
+If navigation needs to be updated to expose the new page, make the smallest possible change.
+
+---
+
+# 23. Error and Loading States
+
+Implement proper UX for:
+
+* API loading
+* Streaming responses
+* Backend failure
+* Network failure
+* Invalid file
+* Unsupported file type
+* Empty prompt
+* Assistant backend unavailable
+* Feature backend unavailable
+
+Never leave the user with a blank screen or permanently loading state.
+
+Show clear but concise enterprise-friendly error messages.
+
+---
+
+# 24. Command Menu UX Details
+
+The command menu should:
+
+* Open automatically when `/` or `@` is typed.
+* Filter results as the user types.
+* Highlight the active result.
+* Support mouse selection.
+* Support keyboard navigation.
+* Support Enter.
+* Support Tab.
+* Support Escape.
+* Position itself intelligently relative to the chat input.
+* Not go outside the viewport.
+* Close when selection is completed.
+* Preserve the rest of the user's prompt.
+* Avoid breaking cursor positioning.
+* Correctly handle commands typed in the middle of a sentence.
+
+Alphabetically sort matching results unless there is a stronger UX reason to prioritize exact/prefix matches.
+
+Prefer:
+
+```text
+Exact/prefix match
+    ↓
+Relevant partial match
+    ↓
+Alphabetical order
+```
+
+---
+
+# 25. Example User Flows
+
+## Flow 1 – Normal AI Chat
+
+```text
+User opens IPRU Assist New
+
+↓
+
+Types:
+"What is the latest AUM?"
+
+↓
+
+No assist/feature selected
+
+↓
+
+Request goes to IPRU GPT backend
+
+↓
+
+Response displayed
+```
+
+---
+
+## Flow 2 – PMS Assist
+
+```text
+User types:
+
+"/pms"
+```
+
+Menu shows:
+
+```text
+PMS Assist
+```
+
+User presses:
+
+```text
+Tab
+```
+
+UI becomes:
+
+```text
+[PMS Assist ×]
+
+What is the current portfolio status?
+```
+
+Request goes to:
+
+```text
+PMS Assist backend
+```
+
+Not IPRU GPT.
+
+---
+
+## Flow 3 – PST Assist
+
+```text
+User types:
+
+"/pst"
+```
+
+Selects:
+
+```text
+PST Assist
+```
+
+UI shows:
+
+```text
+[PST Assist ×]
+```
+
+User types:
+
+```text
+Explain the latest PST data
+```
+
+Request goes to PST backend.
+
+---
+
+## Flow 4 – Chat with Excel
+
+```text
+User types:
+
+"@chat-with-e"
+```
+
+Menu filters to:
+
+```text
+Chat with Excel
+```
+
+User presses:
+
+```text
+Tab
+```
+
+Input becomes:
+
+```text
+[Chat with Excel ×]
+
+Analyze the sales numbers in this file
+```
+
+Excel functionality/backend is activated.
+
+---
+
+## Flow 5 – Plus Menu
+
+User clicks:
+
+```text
++
+```
+
+Menu:
+
+```text
+Add files
+
+────────────
+
+FEATURES
+
+Chat with PDF
+Chat with Excel
+
+────────────
+
+ASSISTS
+
+PMS Assist
+PST Assist
+```
+
+User clicks:
+
+```text
+PMS Assist
+```
+
+The command menu closes and the input shows:
+
+```text
+[PMS Assist ×]
+```
+
+---
+
+# 26. Important Implementation Principle
+
+The chat input should be treated as a **command-aware input**, not simply a normal text input.
+
+Maintain separate state for:
+
+```text
+messageText
+selectedAssist
+selectedFeature
+commandMenuOpen
+commandTrigger
+commandQuery
+highlightedCommand
+uploadedFiles
+selectedModel
+```
+
+Do not mix command state directly into the prompt string.
+
+The final request should be constructed from structured state.
+
+---
+
+# 27. Extensibility
+
+The architecture should make future additions easy.
+
+For example, later we should be able to add:
+
+```text
+/finance-assist
+/sales-assist
+/compliance-assist
+
+@chat-with-word
+@chat-with-ppt
+@document-summary
+@document-comparison
+```
+
+by primarily adding a registry/config entry and corresponding backend integration rather than rewriting the chat input.
+
+---
+
+# 28. Development Approach
+
+Follow this order:
+
+### Step 1
+
+Inspect the existing project structure.
+
+### Step 2
+
+Inspect and understand IPRU GPT.
+
+### Step 3
+
+Inspect PMS Assist frontend/API integration.
+
+### Step 4
+
+Inspect PST Assist frontend/API integration.
+
+### Step 5
+
+Create:
+
+```text
+src/projects/IPru Assist New
+```
+
+### Step 6
+
+Clone/reuse the required IPRU GPT functionality into the new page.
+
+### Step 7
+
+Build the modern chat UI.
+
+### Step 8
+
+Implement the `+` menu.
+
+### Step 9
+
+Implement `/` Assist command handling.
+
+### Step 10
+
+Implement `@` Feature command handling.
+
+### Step 11
+
+Implement keyboard navigation.
+
+### Step 12
+
+Implement command filtering/autocomplete.
+
+### Step 13
+
+Implement assistant/feature context chips.
+
+### Step 14
+
+Implement backend routing.
+
+### Step 15
+
+Integrate PMS Assist backend.
+
+### Step 16
+
+Integrate PST Assist backend.
+
+### Step 17
+
+Prepare feature backend integration architecture for PDF and Excel.
+
+### Step 18
+
+Test normal IPRU GPT flow.
+
+### Step 19
+
+Test all command interactions.
+
+### Step 20
+
+Test existing pages to ensure nothing is broken.
+
+---
+
+# 29. Acceptance Criteria
+
+The implementation is successful only if all of the following work:
+
+* [ ] `IPRU Assist New` exists as a separate page/module.
+* [ ] Existing pages remain unchanged.
+* [ ] Existing IPRU GPT functionality is preserved.
+* [ ] Multiple AI model support is preserved.
+* [ ] `+` button exists beside the chat input.
+* [ ] Add files option exists.
+* [ ] Chat with PDF exists under Features.
+* [ ] Chat with Excel exists under Features.
+* [ ] PMS Assist exists under Assists.
+* [ ] PST Assist exists under Assists.
+* [ ] Typing `/` opens Assist suggestions.
+* [ ] Typing `@` opens Feature suggestions.
+* [ ] Suggestions filter dynamically.
+* [ ] Arrow Up works.
+* [ ] Arrow Down works.
+* [ ] Enter works.
+* [ ] Tab autocomplete works.
+* [ ] Escape closes the menu.
+* [ ] Mouse selection works.
+* [ ] Commands can be selected while typing a prompt.
+* [ ] Selected Assist appears as a visible context/chip.
+* [ ] Selected command is not unnecessarily sent as part of the prompt.
+* [ ] PMS requests reach PMS backend.
+* [ ] PST requests reach PST backend.
+* [ ] Normal chat reaches IPRU GPT backend.
+* [ ] Feature/backend architecture is extensible.
+* [ ] Loading states work.
+* [ ] Error states work.
+* [ ] UI is responsive.
+* [ ] UI looks modern and enterprise-ready.
+* [ ] No existing functionality is broken.
+
+---
+
+# Final Instruction
+
+Do not start by blindly writing code.
+
+First **inspect the existing repository**, especially:
+
+```text
+IPRU GPT
+PMS Assist
+PST Assist
+```
+
+Understand their architecture and API integrations.
+
+Then implement `IPRU Assist New` as a **new, isolated, modern unified AI workspace** that builds on the existing IPRU GPT experience while adding the command-driven Assist/Feature architecture.
+
+Prioritize:
+
+**Correct existing backend integration > clean architecture > modern UX > extensibility.**
+
+Do not mock PMS/PST integrations if the real implementations already exist in the repository. Reuse their actual API contracts and behavior.
+
+Do not modify existing pages unnecessarily.
