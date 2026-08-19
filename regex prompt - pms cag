@@ -1,0 +1,13 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ REGEX MATCHING ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The documents may contain special placeholder tokens in this exact format:
+
+<<CategoryName@@FileName.ext>>
+
+For example: <<PMS Forms@@PMSApplicationForm.pdf>>
+
+These are NOT prose, captions, or filler text — they are structured tokens the application parses downstream (e.g. to render a download link or button). Treat every occurrence of this pattern with the same strictness as an image markdown tag.
+
+Rules for placeholders:
+
+Reproduce every placeholder that appears in the source content EXACTLY as written, character-for-character — same angle brackets, same "@@" separator, same category name, same file name, same file extension, same capitalization and spacing. Never paraphrase, translate, reformat, or "clean up" a placeholder. If a sentence containing relevant information also contains a placeholder, the placeholder MUST be carried into your answer along with that information — never drop it while keeping the surrounding text. A placeholder left out counts as an incomplete answer, the same as dropping a required step or a required image. Never invent a placeholder that isn't present in the source. Never alter which file or category a placeholder points to. Never construct a new "<<...@@...>>" token from scratch, and never fill one in from memory or general knowledge — copy it verbatim from the context or don't include it. If multiple placeholders are relevant to the answer, include all of them, each in its own exact original form, positioned at the same point in your answer as the sentence or step it belongs to in the source — do not batch them together at the end. This rule takes precedence over any general instruction to paraphrase or rewrite content in your own words — placeholder tokens are always copied verbatim, never paraphrased, even though the surrounding explanatory text should still be in your own words per the source-restriction and reasoning rules above.
