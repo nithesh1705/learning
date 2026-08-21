@@ -1,115 +1,56 @@
-# IPRU NexGen — Phase 1 Build Prompt
+# IPRU NexGen — Phase 1 Addendum: Inline Selection Chip
 
-**Reference:** `IPRU_NexGen_Project_Spec.md` (full project spec). This prompt covers Phase 1 only — do not implement anything from Phases 2–7 yet.
-
-**Scope of this phase:** frontend only. No new backend endpoints are required for Phase 1 beyond a static/mock config fetch if needed — real backend wiring for chat/assists/tools starts in Phase 2.
+**Reference:** `IPRU_NexGen_Project_Spec.md` and `IPRU_NexGen_Phase1_Build_Prompt.md`. This addendum refines §5 (Commit behavior) of the Phase 1 prompt — implement this instead of the plain-text commit described there for **tools**, and use the same chip pattern for the **assist** trigger token itself (separate from the AssistBanner, see §3 below).
 
 ---
 
-## 1. Rename the page
+## 1. Problem with current spec
 
-- In `IpruAssistFrontend/frontend/src/projects/`, rename the existing **"IPRU Assist New"** folder/page to **`IPRU_NexGen`**.
-- Update every reference to the old name: route paths, nav labels, page titles, imports, and any lazy-loaded route config in the parent app shell.
-- Do not touch any other page (Dashboard, IPRU GPT, PMS Assist, PST Assist, Investment Assist, Sales Assist, Compliance Assist, Finance Assist) or its routes.
-- Sanity check after rename: app builds, nav still links correctly, no dangling imports to the old folder name.
+Right now, once a tool is committed (e.g. `@chat-with-doc`), the raw trigger text `@chat-with-doc` just sits in the input as plain characters. This should instead render as a small inline chip.
 
 ---
 
-## 2. Config-driven assist & tools setup
+## 2. Chip behavior (tools)
 
-Create two config files under `IPRU_NexGen/config/`:
+When a tool is committed (via Enter, click, or Space-after-exact-match):
 
-**`assistConfig.ts`**
-```ts
-export interface AssistConfig {
-  id: string;            // e.g. "pms-assist"
-  trigger: string;        // e.g. "/pms-assist"
-  label: string;           // e.g. "PMS Assist"
-  description: string;    // shown in dropdown
-  icon?: string;
-  enabled: boolean;
-}
-```
-Seed with `pms-assist` and `pst-assist` entries (matching current functionality). Adding a third assist later should require only a new entry here — no logic changes elsewhere.
-
-**`toolsConfig.ts`**
-```ts
-export interface ToolConfig {
-  id: string;             // e.g. "create-doc"
-  trigger: string;         // e.g. "@create-doc"
-  label: string;
-  description: string;
-  icon?: string;
-  category: "feature";     // reserved for future grouping
-  enabled: boolean;
-}
-```
-Seed with all 8 tools from the spec (`chat-with-doc`, `create-doc`, `chat-with-pdf`, `create-pdf`, `chat-with-excel`, `create-excel`, `translate-document`, `send-mail`), even though most aren't functional until later phases — `enabled: false` is fine for the ones not yet built if you want to hide them from the dropdown until their phase lands. Confirm with me before hiding any — default assumption is **show all, functionality lands later.**
-
-Both configs should be the single source of truth the autocomplete component reads from — no hardcoded lists in the component itself.
+- Replace the raw `@chat-with-doc` text with an inline, non-editable **chip** rendered inside the input, showing:
+  - The tool's icon (from `toolsConfig.icon`)
+  - Its display label in title case (e.g. "Chat With Doc" — derive from `toolsConfig.label`, not the raw trigger string)
+  - A small `×` at the end of the chip
+- The chip is a single atomic unit in the input:
+  - Clicking the `×` removes the entire chip in one action, same as if it was never typed, cursor lands where the chip was.
+  - Pressing `Backspace` with the cursor immediately after the chip removes the **entire chip** in one keystroke (not one character at a time) and restores focus to plain text input at that position.
+  - The chip cannot be partially edited — no clicking into the middle of it, no arrow-key entry into it. Cursor navigation (`←`/`→`) skips over it as one unit.
+- Text can be typed normally before and after the chip in the same message (chips are inline, not block-level), matching the existing "tools can be referenced anywhere in the prompt" behavior.
+- Multiple tool chips in a single message are allowed (e.g. "`@chat-with-doc` then `@create-doc`" both committed) — each behaves independently per the above.
 
 ---
 
-## 3. Composer changes
+## 3. Chip behavior (assists)
 
-- The **`+` button** must be scoped to **file attachment only** (opens file picker / shows attached file chips). Remove any existing menu content behind it that lists tools/assists.
-- Keep the existing composer layout otherwise: input box, model dropdown, web search toggle, send button — no changes to those in this phase.
+Assists still get the `AssistBanner` docked to the composer (per Phase 1 §5) for the duration of the session — that does not change. In addition:
 
----
-
-## 4. Trigger autocomplete component
-
-Build a new `TriggerAutocomplete` component, anchored to and sliding in above the composer (not a popover from the `+` button).
-
-**Trigger detection:**
-- Typing `/` anywhere in the input opens the dropdown sourced from `assistConfig` (only `enabled` entries).
-- Typing `@` anywhere in the input opens the dropdown sourced from `toolsConfig` (only `enabled` entries).
-- Detection must work mid-text, not just at the start of the input (scan from cursor position backward to the nearest whitespace/start-of-string to find the active token).
-
-**Filtering:**
-- As the user types more characters after `/` or `@`, filter the list live, case-insensitive, substring or prefix match against `id`/`label`, sorted alphabetically among matches.
-- No matches → dropdown closes.
-
-**Keyboard & mouse interaction:**
-- `↓` / `↑` — move highlighted selection within the open list (wraps at ends).
-- `Tab` — autocompletes the currently highlighted item's trigger text inline into the input (partial → full), keeping the dropdown open if there are still multiple candidates sharing that prefix, or closing it if the match is now unique.
-- `Enter` or mouse click on an item — commits that selection fully (see §5 for what "commit" means per type) and closes the dropdown.
-- `Space` right after a fully-typed, exact-match trigger also commits it and returns the caret to normal typing.
-- `Esc` — closes the dropdown without committing, leaving typed text as-is.
-
-**Positioning:** dropdown slides up, docked to the top edge of the composer, matching composer width or a reasonable max-width, scrollable if the list is long.
+- At the point in the text where the user typed the `/assist` trigger, also replace it with the same chip style (icon + label + `×`) rather than leaving raw `/pst-assist` text or fully deleting it silently.
+- Clicking that chip's `×`, or backspacing it away, should both remove the chip **and** end the assist session (i.e. also dismiss the `AssistBanner` and clear the selected-assist state). This becomes the canonical "exit assist mode" affordance — resolving the open question from Phase 1 §5/§7: exiting assist mode happens by removing its chip (via `×` or backspace), not via a separate banner close button. If you want a redundant `×` on the banner itself too, it should trigger the same removal logic as removing the chip.
 
 ---
 
-## 5. Commit behavior
+## 4. Implementation notes
 
-**Assist commit (`/` selection, e.g. `/pst-assist`):**
-- Remove the literal trigger text from the input box.
-- Show an `AssistBanner` docked to the composer (e.g. "You are chatting with PST Assist") for the remainder of that assist "session" (until the user clears/changes it — define a clear affordance to exit assist mode, e.g. an "x" on the banner, and confirm the exact UX with me if ambiguous).
-- Track selected assist in component/page state so Phase 2+ wiring knows which backend to target — actual API call wiring is Phase 2, this phase just needs the state + banner to exist correctly.
-
-**Tool commit (`@` selection, e.g. `@create-doc`):**
-- Trigger text **stays inline** in the input, since tools are referenced mid-sentence.
-- No banner needed for tools.
+- Use each config entry's `icon` field (already present in `assistConfig.ts` / `toolsConfig.ts` from Phase 1) — no new icons need sourcing unless a tool/assist is missing one, in which case flag it rather than guessing a placeholder.
+- Chip should be visually distinct from plain text (background pill, rounded corners) but stay compact enough not to disrupt normal typing flow.
+- This is a pure frontend/input-model change — no backend involvement. What ultimately gets sent to the backend (Phase 2+) should serialize the chip back into its canonical trigger form (`@chat-with-doc`, `/pst-assist`) for the API payload, even though the user sees the friendly chip — i.e. the chip is a display/interaction layer over the same underlying token, not a different data model.
 
 ---
 
-## 6. Out of scope for Phase 1 (do not build yet)
+## 5. Acceptance checklist
 
-- Actual chat/assist/tool backend calls (Phase 2+).
-- Split-pane document preview/edit (Phase 3+).
-- Any tool functionality itself (doc/pdf/excel/translate/send-mail) — Phases 3–7.
-
----
-
-## 7. Acceptance checklist
-
-- [ ] Page renamed everywhere, app builds clean, no other page affected.
-- [ ] `assistConfig.ts` and `toolsConfig.ts` created and are the only source the dropdown reads from.
-- [ ] `+` button only handles file attachment.
-- [ ] `/` and `@` open the correct filtered list, working mid-text.
-- [ ] Arrow keys, Tab-complete, Enter, click, Space-after-match, and Esc all behave as specified.
-- [ ] Assist commit removes trigger text and shows the banner; tool commit leaves trigger text inline.
-- [ ] Selected-assist state is tracked and accessible for Phase 2 wiring.
-
-Please flag anything ambiguous (especially the "exit assist mode" affordance in §5) before finalizing rather than guessing silently.
+- [ ] Committing a tool renders an icon + label + `×` chip instead of raw `@trigger-text`.
+- [ ] Committing an assist renders the same chip style at the trigger's position, in addition to the existing `AssistBanner`.
+- [ ] Chip `×` removes the whole chip in one action.
+- [ ] Backspace immediately after a chip removes the whole chip in one keystroke, not character-by-character.
+- [ ] Cursor arrow keys treat the chip as a single unit (skip over, not into).
+- [ ] Removing an assist's chip (via `×` or backspace) also ends the assist session and dismisses the banner.
+- [ ] Multiple chips can coexist in one message, each independently removable.
+- [ ] On send, chips serialize back to their canonical `@trigger` / `/trigger` string for the backend payload.
