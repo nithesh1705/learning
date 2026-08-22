@@ -1,56 +1,126 @@
-# IPRU NexGen — Phase 1 Addendum: Inline Selection Chip
+# IPRU NexGen — Phase 2 Build Prompt
 
-**Reference:** `IPRU_NexGen_Project_Spec.md` and `IPRU_NexGen_Phase1_Build_Prompt.md`. This addendum refines §5 (Commit behavior) of the Phase 1 prompt — implement this instead of the plain-text commit described there for **tools**, and use the same chip pattern for the **assist** trigger token itself (separate from the AssistBanner, see §3 below).
+**Reference:** `IPRU_NexGen_Project_Spec.md` (esp. §3, §5.1, §5.7), `IPRU_NexGen_Phase1_Build_Prompt.md`, `IPRU_NexGen_Phase1_Addendum_Chips.md`. This prompt covers Phase 2 only — do not implement anything from Phases 3–7 (tools/assists functionality) yet.
 
----
-
-## 1. Problem with current spec
-
-Right now, once a tool is committed (e.g. `@chat-with-doc`), the raw trigger text `@chat-with-doc` just sits in the input as plain characters. This should instead render as a small inline chip.
+**Scope of this phase:** build a real, working backend for the existing multi-model chat UI (Gemini + GPT, with Gemini web search), and wire the Phase 1 frontend to it. Currently this is non-functional/placeholder in the frontend — after this phase, plain chat (no `/assist` or `@tool` selected) must fully work end-to-end.
 
 ---
 
-## 2. Chip behavior (tools)
+## 1. Backend scaffolding (`IPRU_NexGen/`)
 
-When a tool is committed (via Enter, click, or Space-after-exact-match):
+Create the backend from scratch per the folder structure in the project spec §3. For this phase, the relevant pieces are:
 
-- Replace the raw `@chat-with-doc` text with an inline, non-editable **chip** rendered inside the input, showing:
-  - The tool's icon (from `toolsConfig.icon`)
-  - Its display label in title case (e.g. "Chat With Doc" — derive from `toolsConfig.label`, not the raw trigger string)
-  - A small `×` at the end of the chip
-- The chip is a single atomic unit in the input:
-  - Clicking the `×` removes the entire chip in one action, same as if it was never typed, cursor lands where the chip was.
-  - Pressing `Backspace` with the cursor immediately after the chip removes the **entire chip** in one keystroke (not one character at a time) and restores focus to plain text input at that position.
-  - The chip cannot be partially edited — no clicking into the middle of it, no arrow-key entry into it. Cursor navigation (`←`/`→`) skips over it as one unit.
-- Text can be typed normally before and after the chip in the same message (chips are inline, not block-level), matching the existing "tools can be referenced anywhere in the prompt" behavior.
-- Multiple tool chips in a single message are allowed (e.g. "`@chat-with-doc` then `@create-doc`" both committed) — each behaves independently per the above.
+```
+IPRU_NexGen/
+├── app/
+│   ├── api/
+│   │   └── chat.py              # chat endpoint(s)
+│   ├── core/
+│   │   ├── config.py             # env, credentials, model API keys
+│   │   └── model_providers/
+│   │       ├── base.py           # common provider interface
+│   │       ├── gemini_provider.py
+│   │       └── gpt_provider.py
+│   ├── models/                   # pydantic request/response schemas + DB models
+│   ├── db/                       # DB session/connection setup
+│   └── main.py                   # FastAPI app entrypoint
+├── requirements.txt
+└── .env.example
+```
 
----
-
-## 3. Chip behavior (assists)
-
-Assists still get the `AssistBanner` docked to the composer (per Phase 1 §5) for the duration of the session — that does not change. In addition:
-
-- At the point in the text where the user typed the `/assist` trigger, also replace it with the same chip style (icon + label + `×`) rather than leaving raw `/pst-assist` text or fully deleting it silently.
-- Clicking that chip's `×`, or backspacing it away, should both remove the chip **and** end the assist session (i.e. also dismiss the `AssistBanner` and clear the selected-assist state). This becomes the canonical "exit assist mode" affordance — resolving the open question from Phase 1 §5/§7: exiting assist mode happens by removing its chip (via `×` or backspace), not via a separate banner close button. If you want a redundant `×` on the banner itself too, it should trigger the same removal logic as removing the chip.
-
----
-
-## 4. Implementation notes
-
-- Use each config entry's `icon` field (already present in `assistConfig.ts` / `toolsConfig.ts` from Phase 1) — no new icons need sourcing unless a tool/assist is missing one, in which case flag it rather than guessing a placeholder.
-- Chip should be visually distinct from plain text (background pill, rounded corners) but stay compact enough not to disrupt normal typing flow.
-- This is a pure frontend/input-model change — no backend involvement. What ultimately gets sent to the backend (Phase 2+) should serialize the chip back into its canonical trigger form (`@chat-with-doc`, `/pst-assist`) for the API payload, even though the user sees the friendly chip — i.e. the chip is a display/interaction layer over the same underlying token, not a different data model.
+- Study `Current_IPRUGPT_Backend` (read-only) for: how model API keys/env vars are named and loaded, how conversation/message tables are structured, how streaming (if used) is implemented, and general FastAPI app conventions (routers, middleware, error handling). **Do not copy code — re-implement cleanly with full type hints and docstrings.**
+- `config.py` should centralize: Gemini API key, OpenAI/GPT API key, DB connection string, any other env needed — following the naming conventions seen in the old backend so ops/infra stays consistent, but defined fresh in `.env.example`.
 
 ---
 
-## 5. Acceptance checklist
+## 2. Model provider interface
 
-- [ ] Committing a tool renders an icon + label + `×` chip instead of raw `@trigger-text`.
-- [ ] Committing an assist renders the same chip style at the trigger's position, in addition to the existing `AssistBanner`.
-- [ ] Chip `×` removes the whole chip in one action.
-- [ ] Backspace immediately after a chip removes the whole chip in one keystroke, not character-by-character.
-- [ ] Cursor arrow keys treat the chip as a single unit (skip over, not into).
-- [ ] Removing an assist's chip (via `×` or backspace) also ends the assist session and dismisses the banner.
-- [ ] Multiple chips can coexist in one message, each independently removable.
-- [ ] On send, chips serialize back to their canonical `@trigger` / `/trigger` string for the backend payload.
+`model_providers/base.py` defines a common interface, e.g.:
+
+```python
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant", "system"]
+    content: str
+
+class ModelProvider(Protocol):
+    async def generate(
+        self,
+        messages: list[ChatMessage],
+        web_search: bool = False,
+        stream: bool = False,
+    ) -> AsyncIterator[str] | str:
+        ...
+```
+
+- `gemini_provider.py` implements this against the Gemini API, including native web-search/grounding support when `web_search=True` (matching the frontend's web search toggle).
+- `gpt_provider.py` implements this against the GPT/OpenAI API. If GPT doesn't support the same web-search mechanism, the endpoint should simply ignore/disable the toggle for that provider (surface this clearly in the response or a capability flag — see §4) rather than failing silently or erroring.
+- Both providers should support streaming responses if the frontend chat UI expects incremental tokens (check current IPRU GPT frontend behavior — reuse that expectation, don't change frontend UX in this phase).
+
+---
+
+## 3. Chat endpoint
+
+`api/chat.py`:
+
+- `POST /api/chat` (or `/api/chat/stream` if streaming is via SSE/websocket — match whatever the existing IPRU GPT frontend already expects, since Phase 1 didn't change that contract) accepting:
+  ```json
+  {
+    "conversation_id": "optional, for continuing a thread",
+    "model": "gemini | gpt",
+    "web_search": true,
+    "messages": [ { "role": "user", "content": "..." } ]
+  }
+  ```
+- Selects the correct `ModelProvider` implementation based on `model`.
+- Persists the conversation and each message (user + assistant) to the DB (see §5) so history can be reloaded.
+- Returns the assistant's reply (streamed or full, per whatever transport is chosen) plus `conversation_id` if newly created.
+
+No assist-routing or tool-calling logic is needed yet — this endpoint is **plain chat only**. Phase 2 must not attempt to detect `/` or `@` chips and branch — that's Phase 2.5-adjacent groundwork for later phases; for now, whatever text (including any leftover chip-serialized tokens per the Phase 1 addendum) is sent as-is to the model as plain content.
+
+---
+
+## 4. Web search toggle handling
+
+- When `web_search=true` and `model=gemini`: enable Gemini's web search/grounding.
+- When `web_search=true` and `model=gpt` (if GPT path doesn't support it in this phase): return a small capability note in the response metadata (e.g. `"web_search_applied": false`) so the frontend can show something like a disabled/inactive indicator rather than silently ignoring the toggle. Confirm with me if you want this surfaced in the UI in this phase or deferred — default assumption is **surface it, minimal UI treatment, nothing fancy.**
+
+---
+
+## 5. Data model (minimal for this phase)
+
+- `conversations`: id, user_id, model, created_at, updated_at.
+- `messages`: id, conversation_id, role, content, created_at.
+
+Keep this minimal and extensible — Phase 3+ will add `generated_files` and assist/tool tagging per message, don't build those tables yet, just don't design anything that would block adding them later (e.g. leave room for a nullable `tool_used` / `assist_used` column or a separate join table down the line).
+
+---
+
+## 6. Frontend wiring
+
+- Point the Phase 1 composer's send action at the new `/api/chat` endpoint.
+- Wire the model dropdown value and web-search toggle state into the request payload.
+- Render streamed or full responses in the existing `ChatWindow`/`ChatBubble` components from Phase 1 — no new chat UI components needed this phase.
+- Handle and surface basic error states (model API failure, network error) with a simple inline error message in the chat, not a crash/blank state.
+
+---
+
+## 7. Out of scope for Phase 2
+
+- Any `/assist` routing to PMS/PST backends (later phase, not yet numbered in this addendum sequence — confirm before starting if you want this folded into Phase 2 or kept separate).
+- Any `@tool` execution (Phases 3–7).
+- Split-pane preview/edit (Phase 3+).
+- File attachment handling beyond what Phase 1 UI already has for the `+` button (no backend processing of attached files yet).
+
+---
+
+## 8. Acceptance checklist
+
+- [ ] Backend scaffolded per structure above, nothing written into `Current_IPRUGPT_Backend`.
+- [ ] `.env.example` covers all needed keys/config, following old backend's naming conventions.
+- [ ] Gemini chat works end-to-end from the Phase 1 UI, including web search toggle.
+- [ ] GPT chat works end-to-end from the Phase 1 UI, with web-search-unsupported case handled gracefully (not silently broken).
+- [ ] Conversations and messages persist and can be reloaded.
+- [ ] Streaming (or whatever transport matches existing IPRU GPT behavior) works without regressions to Phase 1 UI/UX.
+- [ ] Basic error handling in place for model API failures.
+
+Please flag before starting if you'd like assist-routing (`/pms-assist`, `/pst-assist`) folded into this phase instead of kept separate — the original phase plan treats general chat and assist-routing as adjacent but the spec doesn't explicitly number assist-routing as its own phase, so confirm rather than assume.
