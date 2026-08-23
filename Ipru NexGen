@@ -1,150 +1,103 @@
-# IPRU NexGen — Phase 3 Build Prompt
+# IPRU NexGen — Phase 6 Build Prompt
 
-**Reference:** `IPRU_NexGen_Project_Spec.md` (esp. §4.5, §5.2, §5.4, §6), Phase 1 + Phase 1 Addendum, Phase 2 Build Prompt. This prompt covers Phase 3 only — do not implement Phases 4–7 (pdf/excel/translate/send-mail) yet.
+**Reference:** `IPRU_NexGen_Project_Spec.md` (esp. §5.5, §6), Phase 1 + Addendum, Phase 2, Phase 3 (tool registry, storage service, `generated_file` model). Phases 4 and 5 (PDF, Excel tools) are being skipped for now — do not assume they exist. This prompt covers **only** `@translate-document`.
 
-**Open item carried over from Phase 2:** assist-routing (`/pms-assist`, `/pst-assist` actually hitting those backends) was not folded into Phase 2 and still hasn't been explicitly scheduled. This phase does **not** depend on it, but flag it again before Phase 4 so it doesn't get lost.
-
-**Scope of this phase:** make `@chat-with-doc` and `@create-doc` real, working tools, callable by the model through tool-calling (per §5.2 of the spec), plus the split-pane document preview/edit UI, download, and 24h expiry behavior.
+**Note:** assist-routing (`/pms-assist`, `/pst-assist`) is still unscheduled from Phase 2 — not needed for this phase, but still flagged as an open gap.
 
 ---
 
-## 1. Backend: tool registry foundation
+## 1. What's different about this tool
 
-This is the first phase that touches `core/tool_registry.py` and `app/tools/` — build the registry mechanism now, generically, so Phases 4–7 just add entries to it.
+Unlike `create-doc` (Phase 3), **translate-document does not get built from scratch.** There is already a working, running translate backend in production. This phase only:
 
-```
-IPRU_NexGen/
-├── app/
-│   ├── core/
-│   │   └── tool_registry.py       # NEW: name -> {fn, schema}
-│   ├── tools/                      # NEW
-│   │   ├── chat_with_doc.py
-│   │   └── create_doc.py
-│   ├── services/
-│   │   └── storage_service.py      # NEW: save/retrieve/expire generated files
-│   ├── models/
-│   │   └── generated_file.py       # NEW: DB model (see §6)
-```
+1. Studies that existing backend's contract (request/response shape, GCS URI conventions, auth).
+2. Builds a thin wrapper module (`app/tools/translate_document.py`) inside `IPRU_NexGen` that calls it.
+3. Registers it in `tool_registry.py` (built in Phase 3) so it's usable through the same model tool-calling flow as any other tool.
+4. Wires the frontend result the same way `create-doc` results are shown (download/preview under the chat bubble), reusing Phase 3's `generated_file` + `DocumentPreviewPane` machinery — no new UI components needed.
 
-**`tool_registry.py`:**
-- A simple registry (dict or class) mapping tool `id` (matching frontend `toolsConfig.ts` ids, e.g. `"create-doc"`) → `{ "fn": callable, "schema": {...} }`, where `schema` is the JSON-schema-style function-calling definition passed to whichever model provider (Gemini/GPT) is active.
-- Both providers from Phase 2 (`gemini_provider.py`, `gpt_provider.py`) need to accept a list of tool schemas and support the provider's native function/tool-calling mechanism, returning a tool-call request that the chat endpoint then dispatches through the registry.
-- Keep this fully generic — it should not know anything specific about docs; that lives in the individual tool modules.
+Do not modify, redeploy, or duplicate the existing translate backend itself. It stays exactly as-is; this phase only calls it.
 
 ---
 
-## 2. Tool: `chat-with-doc`
+## 2. Study the existing translate backend first
 
-`app/tools/chat_with_doc.py`:
+Before writing `translate_document.py`, inspect the current running translate implementation (wherever it lives) and confirm:
 
-- Purpose: given a previously uploaded/attached document (via the Phase 1 `+` file-attach flow) and a user question, answer questions grounded in that document's content.
-- Function signature (indicative):
-  ```python
-  async def chat_with_doc(file_id: str, question: str) -> str:
-      """Answer a question using the content of a previously uploaded document."""
-  ```
-- Needs to read the attached file's extracted text/content (store extracted text alongside the uploaded file at attach-time, or extract on first use — your call, but document the choice).
-- Schema exposed to the model should clearly describe when to use this (user has attached a doc and is asking about its content) vs. plain chat.
+- Its exact request contract: what fields it expects (source doc reference, source language, target language, etc.) and **which of those are actually required vs. optional/defaulted/auto-detected in the existing backend today** — this tool's own parameters must mirror that exactly, not impose stricter requirements than the existing backend already has.
+- How it expects the source document to be provided — GCS URI, direct upload, base64, etc.
+- Its response shape — does it return a GCS URI to the translated file, raw bytes, a job id for polling (if async), etc.
+- Auth/credentials it needs (likely a GCS service account — same credentials pattern used elsewhere).
+- Whether it's synchronous (translate-and-respond in one call) or asynchronous (submit job, poll/callback for result) — this materially changes the wrapper's shape, so confirm before assuming synchronous.
 
----
-
-## 3. Tool: `create-doc`
-
-`app/tools/create_doc.py`:
-
-- Purpose: given a topic/instructions from the user (e.g. "create a document on FastAPI vs REST API"), generate a Word document.
-- Function signature (indicative):
-  ```python
-  async def create_doc(topic: str, instructions: str | None = None) -> GeneratedFileRef:
-      """Generate a Word document on the given topic and return a reference to the stored file."""
-  ```
-- Internally: use the active chat model to draft structured content (headings/sections/paragraphs), then render it into an actual `.docx` file (e.g. via `python-docx`), then save via `storage_service.py` (see §6) and return a `generated_file` reference (id, filename, type, download/preview URLs).
-- The chat endpoint, upon receiving this tool's result, must attach the `generated_file` reference to the assistant's message record so the frontend can render the download/preview buttons under that specific chat bubble.
+If anything about its contract is unclear or undocumented, flag it back to me rather than guessing at field names or endpoint paths.
 
 ---
 
-## 4. Disambiguation (mirrors send-mail logic pattern from spec §4.4)
+## 3. GCS URI conventions
 
-- `@create-doc` explicitly present → always invoke the tool.
-- No explicit trigger, but user intent clearly asks for a document to be created/generated (e.g. "can you create a document on X") → model should still invoke the tool based on schema description and its own judgement.
-- User asking generic questions about doc content or explanations that only sound document-related (e.g. "what should go in a FastAPI vs REST doc") without asking to *produce* a file → should NOT invoke `create-doc`, just answer in chat.
-- Get this right primarily through clear, example-bearing tool descriptions in the schema (per spec §5.2), not hardcoded keyword matching.
+Per spec §5.5, this tool must reuse the **existing GCS URI conventions** already used by the translate backend — do not invent a new bucket/path scheme for this tool specifically.
 
----
-
-## 5. Frontend: split-pane preview/edit
-
-Per spec §4.5:
-
-- Add `DocumentPreviewPane` component (right half of a newly-split view) and update the page layout: default single-column chat → splits 50/50 the moment a preview/edit is opened.
-- Under any AI chat bubble that includes a `generated_file` of type `doc`: render two buttons, **Preview/Edit** and **Download**.
-- **Preview/Edit** opens the file in the right pane using a Quill-based rich text editor, loaded with the doc's content (fetched via a new backend endpoint, see §7).
-  - Pane header: **Download** and **Close** actions.
-  - If the user made edits and clicks Close (or navigates away) without saving: show a confirmation popup — "Changes will not be saved." — with options to discard or go back and save.
-  - If they choose to save, persist the edited content back to storage (overwriting the stored file) before closing.
-- **Download** triggers a direct file download of the current stored version (not unsaved in-editor changes unless already saved).
+- If the source document a user attaches (via the Phase 1 `+` file-attach flow) is currently stored locally or via `STORAGE_BACKEND` from Phase 3's `storage_service.py`, this wrapper needs to get it into whatever GCS location/shape the translate backend expects before calling it — even if `STORAGE_BACKEND=local` is configured for IPRU NexGen's own generated files. In other words: **the translate tool's GCS handoff to the existing backend is independent of whichever `STORAGE_BACKEND` value IPRU NexGen itself is running with** — don't couple the two. Confirm this separation is fine, or whether you want translate-document to only be enabled when `STORAGE_BACKEND=gcs` (simpler, but more restrictive) — default assumption is **decoupled, translate always stages to GCS regardless of the app's own storage flag**, since that's what the existing backend needs.
+- Once the existing backend returns the translated file (GCS URI or otherwise), pull it back into IPRU NexGen's own storage via `storage_service.py` (respecting whatever `STORAGE_BACKEND` is set to) so it goes through the same `generated_file` record, 24h expiry, download/preview, and "Expired" UI flow as every other tool's output — the user should not see any difference in how a translated doc behaves vs. a created doc.
 
 ---
 
-## 6. Storage & expiry
+## 4. Tool implementation
 
-**Storage backend is env-driven, not hardcoded.** Add to `core/config.py` / `.env.example`:
+`app/tools/translate_document.py`:
 
-```
-STORAGE_BACKEND=local   # local | gcs
-LOCAL_STORAGE_PATH=./storage/generated_files   # used when STORAGE_BACKEND=local
-GCS_BUCKET_NAME=                                # used when STORAGE_BACKEND=gcs
-GCS_CREDENTIALS_PATH=                           # used when STORAGE_BACKEND=gcs
+```python
+async def translate_document(
+    file_id: str,
+    source_language: str | None = None,
+    target_language: str | None = None,
+) -> GeneratedFileRef:
+    """Translate a previously attached document using the existing
+    translate-document backend, and return a reference to the translated
+    file stored via IPRU NexGen's own storage service."""
 ```
 
-`services/storage_service.py`:
-
-- Define a common interface (e.g. `StorageBackend` protocol/ABC) with `save`, `get`, `delete` methods, so the rest of the app never knows or cares which backend is active.
-- `LocalStorageBackend` — implements the interface against `LOCAL_STORAGE_PATH`.
-- `GCSStorageBackend` — implements the interface against `GCS_BUCKET_NAME` using `GCS_CREDENTIALS_PATH` (or default application credentials, matching whatever pattern `translate-document`'s existing GCS usage follows in Phase 6 — study that convention now so both stay consistent even though it's built later).
-- A small factory function reads `STORAGE_BACKEND` at startup and instantiates the matching implementation once (e.g. `get_storage_backend()` used as a singleton/dependency).
-- Public functions used by tools stay backend-agnostic:
-  - `save_file(content: bytes, filename: str, file_type: str) -> GeneratedFileRef`
-  - `get_file(file_id: str) -> bytes | None` — returns None (or raises a clear "expired" exception) if past TTL.
-- A scheduled job (APScheduler or simple periodic task) that runs on an interval, finds `generated_file` rows older than 24h and still `active`, calls `delete` through the active backend, and flips their status to `expired`. This job must work identically regardless of which backend is configured.
-- Switching `STORAGE_BACKEND` in `.env` must require no code changes anywhere else in the app.
-
-`models/generated_file.py` (DB model):
-- `id`, `owner/user_id`, `message_id` (FK to the message it's attached to), `type` (`doc`/`pdf`/`xlsx` — only `doc` used this phase), `storage_path_or_uri`, `created_at`, `expires_at`, `status` (`active` | `expired`), `last_edited_at` (nullable).
+- **Neither `source_language` nor `target_language` is compulsory at this tool's interface level.** Do not assume the existing backend requires the user to specify a target language — go inspect the currently running translate backend's actual behavior first (per §2) and mirror it exactly:
+  - If the existing backend auto-detects source language when omitted, this wrapper must support omitting it the same way, not force a value.
+  - If the existing backend has a default target language (or infers it, or requires the model to ask the user only when genuinely ambiguous), replicate that same default/inference behavior here rather than inventing a new requirement.
+  - Only if the existing backend hard-requires a target language with no default should the model be instructed (via the tool schema) to ask the user for it — and even then, only for the fields the *existing backend* actually requires, not both fields by default.
+- `file_id` refers to a document the user has already attached via the `+` button (Phase 1) — this tool does not accept freeform text to translate, only a document reference. If a user asks to translate pasted text rather than an attached file, the model should decline the tool and instead just translate the text directly in chat (no file involved) — cover this distinction clearly in the tool's schema description, mirroring the disambiguation pattern from spec §4.4 / Phase 3 §4.
+- Internally: stage the source file to GCS in the shape the existing backend expects → call it, passing through whichever of `source_language`/`target_language` were actually provided (or omitted, matching the existing backend's own optional/default handling) → receive the translated result → persist via `storage_service.save_file(...)` → return the `generated_file` reference exactly like `create_doc` does in Phase 3, including `message_id` linkage so it renders under the correct chat bubble.
+- If the existing backend is asynchronous (job/poll), decide and document whether IPRU NexGen's chat endpoint blocks until translation completes (simplest, matches Phase 3's synchronous UX) or needs a "processing…" intermediate state in the chat bubble. Default assumption: **block synchronously up to a reasonable timeout** unless the existing backend's typical latency makes that impractical — flag if so.
 
 ---
 
-## 7. New backend endpoints
+## 5. Tool registry entry
 
-- `POST /api/tools/create-doc` — not usually called directly by frontend (goes through the chat endpoint's tool-calling flow) but useful to expose for testing/dev.
-- `GET /api/files/{file_id}/preview` — returns editable content (e.g. doc's structured text/HTML for Quill) or a clear `410 Gone`-style response with an "expired" flag if past TTL.
-- `GET /api/files/{file_id}/download` — streams the file for download, or the same expired response.
-- `PUT /api/files/{file_id}` — saves edited content back (used by the Save action in the preview pane).
+- Add `translate-document` to `tool_registry.py` with a schema describing: purpose, params (`file_id` required; `source_language`/`target_language` optional, matching whatever the existing backend actually defaults/auto-detects — see §2/§4), and clear guidance for the model on when to use it (user has attached a document and asks to translate it) vs. not (plain text translation requests with no attached file). The model should only ask the user for a language when the existing backend genuinely has no default/auto-detect for it — not as a blanket rule.
+- Confirm `translate-document` is present and `enabled: true` in the frontend `toolsConfig.ts` from Phase 1 (it was seeded there already — just flip/confirm `enabled`).
 
 ---
 
-## 8. Frontend "Expired" state
+## 6. Frontend
 
-- If `GET /api/files/{file_id}/preview` or `/download` returns the expired response, the frontend must show **"Expired – Unable to Preview or Download file."** in place of the normal preview/download action, rather than a generic error.
-
----
-
-## 9. Out of scope for Phase 3
-
-- PDF and Excel tools (Phases 4–5).
-- Translate-document, send-mail (Phases 6–7).
-- Assist-routing to PMS/PST backends (still unscheduled — flag before Phase 4).
+- No new components. The existing Phase 3 flow — AI chat bubble → Preview/Edit + Download buttons → `DocumentPreviewPane` (or plain preview if the translated file type doesn't support Quill editing, e.g. if source was a PDF) → 24h expiry → "Expired" state — should just work once the backend returns a `generated_file` reference of the appropriate type.
+- If the translated output type differs from what Phase 3 built the preview pane for (e.g. translating a `.pdf` rather than a `.docx`), and Phase 4 (PDF preview) hasn't been built yet since it's skipped, then translated PDFs should fall back to **download-only** (no preview) for now, with a note that PDF preview arrives when Phase 4 is picked up. Confirm this fallback is acceptable, or whether translate-document should be scoped to doc-type sources only until Phase 4 lands.
 
 ---
 
-## 10. Acceptance checklist
+## 7. Out of scope for Phase 6
 
-- [ ] `tool_registry.py` built generically; both model providers support tool-calling through it.
-- [ ] `chat-with-doc` answers questions grounded in an attached file's content.
-- [ ] `create-doc` generates a real `.docx`, stores it, and links it to the originating chat message.
-- [ ] Disambiguation logic correctly avoids/invokes the tool per §4 examples.
-- [ ] Split-pane UI opens on Preview/Edit, Quill editor loads/saves doc content, Download works.
-- [ ] Close-without-saving shows the confirmation popup.
-- [ ] Files auto-expire after 24h; expired preview/download attempts show the correct frontend message.
-- [ ] Nothing written into `Current_IPRUGPT_Backend`; no other existing page affected.
-- [ ] `STORAGE_BACKEND` env flag (`local` | `gcs`) fully controls which storage implementation is used, with no code changes needed to switch.
+- Building or modifying the existing translate backend itself.
+- PDF/Excel tools (Phases 4–5, still skipped).
+- Send-mail (Phase 7).
+- Assist-routing (still unscheduled).
+
+---
+
+## 8. Acceptance checklist
+
+- [ ] Existing translate backend's contract (request/response shape, sync vs async, GCS conventions, auth) confirmed before implementation — not guessed.
+- [ ] `translate_document.py` wrapper correctly stages source file to GCS per the existing backend's expected convention, independent of IPRU NexGen's own `STORAGE_BACKEND` setting.
+- [ ] Translated result is pulled back into IPRU NexGen's own storage and produces a standard `generated_file` record.
+- [ ] Tool correctly declines for freeform pasted-text translation requests (handles those as plain chat instead).
+- [ ] Registered in `tool_registry.py`; frontend `toolsConfig.ts` entry confirmed enabled.
+- [ ] Translated file appears under the correct chat bubble with working Download (and Preview/Edit if type-appropriate) using Phase 3's existing UI, including 24h expiry and "Expired" state.
+- [ ] Existing translate backend itself untouched.
+
+Please confirm the two flagged defaults (independent GCS staging regardless of `STORAGE_BACKEND`; synchronous blocking call) before finalizing, and confirm whether translated PDFs should be download-only or if this tool should wait on Phase 4 for full parity.
