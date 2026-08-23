@@ -1,103 +1,100 @@
-# IPRU NexGen — Phase 6 Build Prompt
+# IPRU NexGen — Phase 7 Build Prompt
 
-**Reference:** `IPRU_NexGen_Project_Spec.md` (esp. §5.5, §6), Phase 1 + Addendum, Phase 2, Phase 3 (tool registry, storage service, `generated_file` model). Phases 4 and 5 (PDF, Excel tools) are being skipped for now — do not assume they exist. This prompt covers **only** `@translate-document`.
+**Reference:** `IPRU_NexGen_Project_Spec.md` (esp. §5.6, §4.4), Phase 1 + Addendum, Phase 2, Phase 3 (tool registry, `tool_registry.py`). Phases 4–5 are skipped, Phase 6 (translate-document) is done. This prompt covers **only** `@send-mail`.
 
-**Note:** assist-routing (`/pms-assist`, `/pst-assist`) is still unscheduled from Phase 2 — not needed for this phase, but still flagged as an open gap.
-
----
-
-## 1. What's different about this tool
-
-Unlike `create-doc` (Phase 3), **translate-document does not get built from scratch.** There is already a working, running translate backend in production. This phase only:
-
-1. Studies that existing backend's contract (request/response shape, GCS URI conventions, auth).
-2. Builds a thin wrapper module (`app/tools/translate_document.py`) inside `IPRU_NexGen` that calls it.
-3. Registers it in `tool_registry.py` (built in Phase 3) so it's usable through the same model tool-calling flow as any other tool.
-4. Wires the frontend result the same way `create-doc` results are shown (download/preview under the chat bubble), reusing Phase 3's `generated_file` + `DocumentPreviewPane` machinery — no new UI components needed.
-
-Do not modify, redeploy, or duplicate the existing translate backend itself. It stays exactly as-is; this phase only calls it.
+**Reminder of still-open gap:** assist-routing (`/pms-assist`, `/pst-assist`) remains unscheduled from Phase 2 — unrelated to this phase, just flagging so it isn't forgotten before wrap-up.
 
 ---
 
-## 2. Study the existing translate backend first
+## 1. Key rule for this phase: From-address is never asked for
 
-Before writing `translate_document.py`, inspect the current running translate implementation (wherever it lives) and confirm:
+**The "From" email is always the logged-in user's own email — never collected via conversation, never guessed, never left to the model to ask for.**
 
-- Its exact request contract: what fields it expects (source doc reference, source language, target language, etc.) and **which of those are actually required vs. optional/defaulted/auto-detected in the existing backend today** — this tool's own parameters must mirror that exactly, not impose stricter requirements than the existing backend already has.
-- How it expects the source document to be provided — GCS URI, direct upload, base64, etc.
-- Its response shape — does it return a GCS URI to the translated file, raw bytes, a job id for polling (if async), etc.
-- Auth/credentials it needs (likely a GCS service account — same credentials pattern used elsewhere).
-- Whether it's synchronous (translate-and-respond in one call) or asynchronous (submit job, poll/callback for result) — this materially changes the wrapper's shape, so confirm before assuming synchronous.
-
-If anything about its contract is unclear or undocumented, flag it back to me rather than guessing at field names or endpoint paths.
+- Every request hitting the backend already carries the authenticated user's identity in its payload as `user_email` (confirm the exact existing field name/location by checking how other authenticated payloads in `IPRU_NexGen`/`Current_IPRUGPT_Backend` carry the current user's identity — reuse that same field, don't invent a new one).
+- `send_mail.py` must read the From address **only** from that payload field, never from tool arguments the model fills in, and never by asking the user "what's your email?" in chat.
+- The tool's schema/signature should not even expose a `from_email` parameter to the model — it's injected server-side by the endpoint that dispatches the tool call, using the authenticated request's `user_email`, before `send_mail.py`'s core logic runs.
 
 ---
 
-## 3. GCS URI conventions
+## 2. What still needs to be asked
 
-Per spec §5.5, this tool must reuse the **existing GCS URI conventions** already used by the translate backend — do not invent a new bucket/path scheme for this tool specifically.
+Per spec §5.6 / §4.4, the only things the model needs to gather conversationally before sending are:
 
-- If the source document a user attaches (via the Phase 1 `+` file-attach flow) is currently stored locally or via `STORAGE_BACKEND` from Phase 3's `storage_service.py`, this wrapper needs to get it into whatever GCS location/shape the translate backend expects before calling it — even if `STORAGE_BACKEND=local` is configured for IPRU NexGen's own generated files. In other words: **the translate tool's GCS handoff to the existing backend is independent of whichever `STORAGE_BACKEND` value IPRU NexGen itself is running with** — don't couple the two. Confirm this separation is fine, or whether you want translate-document to only be enabled when `STORAGE_BACKEND=gcs` (simpler, but more restrictive) — default assumption is **decoupled, translate always stages to GCS regardless of the app's own storage flag**, since that's what the existing backend needs.
-- Once the existing backend returns the translated file (GCS URI or otherwise), pull it back into IPRU NexGen's own storage via `storage_service.py` (respecting whatever `STORAGE_BACKEND` is set to) so it goes through the same `generated_file` record, 24h expiry, download/preview, and "Expired" UI flow as every other tool's output — the user should not see any difference in how a translated doc behaves vs. a created doc.
+- **Recipient email(s)** — required, must be asked for if not provided.
+- Subject and body — either the user supplies them, or the model drafts them from the user's description of what they want to say (e.g. "I need to send mail... I need two days" → model drafts a leave-request-style subject/body, confirms with the user before sending, per normal good practice, but does not block on an explicit "yes send it" unless you want that as a safety gate — confirm whether a final user confirmation step before actual send is required, or whether providing recipient + content is enough to trigger the tool call).
+
+The From address is **never** part of this back-and-forth — remove any assumption from earlier phase discussion that the model would ask for "the users email id" as well; it doesn't need to, since it's injected from the authenticated payload per §1.
+
+---
+
+## 3. Reference file
+
+- Locate and inspect the existing `testsendmail.py` sample referenced in the original project brief — use it as the working example for how mail sending is actually implemented (SMTP vs an email API/service, auth mechanism, any existing helper functions or credentials pattern).
+- `app/tools/send_mail.py` should be a cleaned-up, properly structured, fully-typed version of that same approach — not a rewrite using a different mail-sending mechanism unless `testsendmail.py`'s approach turns out to be unusable in this backend's context (flag if so, don't silently switch).
 
 ---
 
 ## 4. Tool implementation
 
-`app/tools/translate_document.py`:
+`app/tools/send_mail.py`:
 
 ```python
-async def translate_document(
-    file_id: str,
-    source_language: str | None = None,
-    target_language: str | None = None,
-) -> GeneratedFileRef:
-    """Translate a previously attached document using the existing
-    translate-document backend, and return a reference to the translated
-    file stored via IPRU NexGen's own storage service."""
+async def send_mail(
+    to_email: str | list[str],
+    subject: str,
+    body: str,
+    from_email: str,   # injected server-side from the authenticated request's user_email — never a model-filled argument
+) -> SendMailResult:
+    """Send an email from the current user's own address to the given
+    recipient(s), using the mail-sending approach from testsendmail.py."""
 ```
 
-- **Neither `source_language` nor `target_language` is compulsory at this tool's interface level.** Do not assume the existing backend requires the user to specify a target language — go inspect the currently running translate backend's actual behavior first (per §2) and mirror it exactly:
-  - If the existing backend auto-detects source language when omitted, this wrapper must support omitting it the same way, not force a value.
-  - If the existing backend has a default target language (or infers it, or requires the model to ask the user only when genuinely ambiguous), replicate that same default/inference behavior here rather than inventing a new requirement.
-  - Only if the existing backend hard-requires a target language with no default should the model be instructed (via the tool schema) to ask the user for it — and even then, only for the fields the *existing backend* actually requires, not both fields by default.
-- `file_id` refers to a document the user has already attached via the `+` button (Phase 1) — this tool does not accept freeform text to translate, only a document reference. If a user asks to translate pasted text rather than an attached file, the model should decline the tool and instead just translate the text directly in chat (no file involved) — cover this distinction clearly in the tool's schema description, mirroring the disambiguation pattern from spec §4.4 / Phase 3 §4.
-- Internally: stage the source file to GCS in the shape the existing backend expects → call it, passing through whichever of `source_language`/`target_language` were actually provided (or omitted, matching the existing backend's own optional/default handling) → receive the translated result → persist via `storage_service.save_file(...)` → return the `generated_file` reference exactly like `create_doc` does in Phase 3, including `message_id` linkage so it renders under the correct chat bubble.
-- If the existing backend is asynchronous (job/poll), decide and document whether IPRU NexGen's chat endpoint blocks until translation completes (simplest, matches Phase 3's synchronous UX) or needs a "processing…" intermediate state in the chat bubble. Default assumption: **block synchronously up to a reasonable timeout** unless the existing backend's typical latency makes that impractical — flag if so.
+- The **tool schema exposed to the model** (in `tool_registry.py`) should only declare `to_email`, `subject`, and `body` as model-fillable arguments — `from_email` is not part of the schema the model sees; it's bound in by the dispatching code in the chat endpoint before calling `send_mail()`.
+- Validate `to_email` format(s) before attempting to send; surface a clear error back into chat if invalid rather than failing silently.
+- Return a simple result object (success/failure, message id or error detail) that the chat endpoint turns into a normal assistant reply confirming the send (e.g. "Sent to [recipient]." or a clear failure message).
 
 ---
 
-## 5. Tool registry entry
+## 5. Disambiguation (per spec §4.4, restated precisely for this phase)
 
-- Add `translate-document` to `tool_registry.py` with a schema describing: purpose, params (`file_id` required; `source_language`/`target_language` optional, matching whatever the existing backend actually defaults/auto-detects — see §2/§4), and clear guidance for the model on when to use it (user has attached a document and asks to translate it) vs. not (plain text translation requests with no attached file). The model should only ask the user for a language when the existing backend genuinely has no default/auto-detect for it — not as a blanket rule.
-- Confirm `translate-document` is present and `enabled: true` in the frontend `toolsConfig.ts` from Phase 1 (it was seeded there already — just flip/confirm `enabled`).
+- `@send-mail` explicitly present anywhere in the message → the tool **is** used once recipient + content are available (asking for whichever of those is still missing first).
+- No explicit trigger, but clear intent to actually send something (e.g. "I need to send mail...") → model should still recognize this and proceed toward using the tool, gathering recipient/content as needed — same as if the trigger were present.
+- User asking only for drafted text with no intent to send (e.g. "give me the subject and body") and **no** `@send-mail` trigger → do **not** invoke the tool; just return the drafted subject/body as chat text.
+- Same request but **with** the trigger present (e.g. "give me the subject and body `@send-mail`") → the explicit trigger overrides the ambiguity; the tool **is** invoked (compose and actually send), not just draft-and-display.
+- This logic lives in the tool's schema description + the chat endpoint's tool-calling instructions — not hardcoded string matching on the word "send".
 
 ---
 
 ## 6. Frontend
 
-- No new components. The existing Phase 3 flow — AI chat bubble → Preview/Edit + Download buttons → `DocumentPreviewPane` (or plain preview if the translated file type doesn't support Quill editing, e.g. if source was a PDF) → 24h expiry → "Expired" state — should just work once the backend returns a `generated_file` reference of the appropriate type.
-- If the translated output type differs from what Phase 3 built the preview pane for (e.g. translating a `.pdf` rather than a `.docx`), and Phase 4 (PDF preview) hasn't been built yet since it's skipped, then translated PDFs should fall back to **download-only** (no preview) for now, with a note that PDF preview arrives when Phase 4 is picked up. Confirm this fallback is acceptable, or whether translate-document should be scoped to doc-type sources only until Phase 4 lands.
+- No new UI components needed. `@send-mail` already exists as a chip-style tool trigger from Phase 1 + Addendum, and appears in the `+`-adjacent `/`/`@` autocomplete per Phase 1.
+- The assistant's confirmation-of-send (or request for missing recipient) renders as a normal chat message — no file/preview/download involved, since this tool doesn't produce a `generated_file`.
 
 ---
 
-## 7. Out of scope for Phase 6
+## 7. Registration
 
-- Building or modifying the existing translate backend itself.
-- PDF/Excel tools (Phases 4–5, still skipped).
-- Send-mail (Phase 7).
+- Add `send-mail` to `tool_registry.py` with a schema covering: purpose, `to_email`/`subject`/`body` as the only model-fillable params, and the disambiguation guidance from §5 written directly into the schema's description so the model has it at decision time.
+- Confirm `send-mail` is present and `enabled: true` in the frontend `toolsConfig.ts` from Phase 1.
+
+---
+
+## 8. Out of scope for Phase 7
+
+- Any file-producing behavior (this tool never returns a `generated_file`).
 - Assist-routing (still unscheduled).
+- PDF/Excel tools (still skipped).
 
 ---
 
-## 8. Acceptance checklist
+## 9. Acceptance checklist
 
-- [ ] Existing translate backend's contract (request/response shape, sync vs async, GCS conventions, auth) confirmed before implementation — not guessed.
-- [ ] `translate_document.py` wrapper correctly stages source file to GCS per the existing backend's expected convention, independent of IPRU NexGen's own `STORAGE_BACKEND` setting.
-- [ ] Translated result is pulled back into IPRU NexGen's own storage and produces a standard `generated_file` record.
-- [ ] Tool correctly declines for freeform pasted-text translation requests (handles those as plain chat instead).
+- [ ] `from_email` is always taken from the authenticated request's existing `user_email` field, injected server-side — never a model-fillable parameter, never asked of the user in chat.
+- [ ] `testsendmail.py` inspected and used as the reference implementation approach for `send_mail.py`.
+- [ ] Recipient email(s) and subject/body are gathered conversationally when missing; From is never part of that gathering.
+- [ ] Disambiguation matches all four cases in §5 exactly (explicit trigger + full info, implied intent without trigger, draft-only without trigger, draft request with trigger).
+- [ ] `to_email` validated before send; clear success/failure message returned to chat.
 - [ ] Registered in `tool_registry.py`; frontend `toolsConfig.ts` entry confirmed enabled.
-- [ ] Translated file appears under the correct chat bubble with working Download (and Preview/Edit if type-appropriate) using Phase 3's existing UI, including 24h expiry and "Expired" state.
-- [ ] Existing translate backend itself untouched.
+- [ ] Nothing written into `Current_IPRUGPT_Backend`.
 
-Please confirm the two flagged defaults (independent GCS staging regardless of `STORAGE_BACKEND`; synchronous blocking call) before finalizing, and confirm whether translated PDFs should be download-only or if this tool should wait on Phase 4 for full parity.
+Please confirm whether an explicit final "yes, send it" confirmation step from the user is required before dispatch once recipient + content are ready, or whether having both is sufficient to trigger the actual send — the spec's original examples don't make this fully explicit.
