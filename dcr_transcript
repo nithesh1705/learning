@@ -1,0 +1,90 @@
+def GEMINI_TRANSCRIBE_PROMPT(rm_name, customer_name="Customer", call_type="", input_file_name=""):
+    call_type_note = ""
+    if call_type in ["IN", "OUT"]:
+        call_type_note = f" The call type is {call_type} where IN means incoming call from customer to RM and OUT means outgoing call from RM to customer."
+
+    return f"""Transcribe the given audio recording, which is a conversation between Sales RM {rm_name} from ICICI Prudential Mutual Fund and a customer.
+Known context (LABELING ONLY, see grounding rules below): Expected customer name is {customer_name}.{call_type_note}
+Known context: Input audio filename is {input_file_name}.
+
+GROUNDING RULES (highest priority, override everything else if in conflict):
+1. The RM name, expected customer name, and call type given above exist ONLY to help you label speakers correctly IF those speakers are actually present and speaking in the audio. They are NOT a script, a scenario, or a hint about what should be said.
+2. Never generate, infer, complete, or "fill in" any conversation content based on what a typical call between an RM and customer would sound like. Every single word in your output must be something you actually heard spoken in this specific audio file.
+3. If the audio is silent, contains no discernible speech, is extremely short, is mostly noise, or you are not confident real conversation is present, you MUST NOT invent a plausible-sounding call to match the expected names. In that case output only the genuinely audible fragments (even if very short), or an empty transcript if truly nothing is audible. An empty or partial transcript is always correct over a fabricated one.
+4. Before finalizing your output, check each line against this question: "Did I actually hear this, or am I completing the scene because I was told who's on this call?" If it's the latter, delete that line.
+5. Silence, dead air, or an incomplete/dropped call is a valid and expected outcome. Do not pad a short real call with extra invented dialogue to make it seem more complete.
+
+Output requirements:
+1. Diarize clearly into two speakers only:
+   - RM speaker label must be exactly: {rm_name}
+   - Customer speaker label must be the detected customer name from audio.
+   - You must actively infer the customer name from how speakers address each other using honorific cues such as sir, mam, Mr, Ms, Mrs (examples: \"Mr. Akshay\", \"Ms Neha\", \"Akshay sir\", \"Neha mam\").
+   - If a customer name is found at least once, use that same name for all customer lines.
+   - Use exactly \"Customer\" only if no reliable customer name is present anywhere in the call.
+   - Name inference is for LABELING an utterance you already know was spoken — never a reason to add new utterances.
+2. Include timestamp for every utterance in chronological order.
+3. Use this exact line format for each utterance:
+    [MM:SS] - SpeakerName - text
+4. MM:SS must be based on utterance start time, zero-padded (example: 00:05, 12:47).
+5. Omit silence and non-speech sections.
+6. Output must be only in English. If speech is in another language, translate to English while preserving meaning and tone.
+7. Return ONLY valid JSON in this exact envelope shape (no markdown, no code fences, no extra keys, no additional commentary):
+{{
+    "data": {{
+        "audio_analysis_results": {{
+            "AgentAvailability": "100.0",
+            "BlankTime": "",
+            "HoldTime": "",
+            "MuteTime": "",
+            "TotalBlankTime": "0.0",
+            "TotalCallDuration": "<duration_minutes_as_string>",
+            "TotalHoldTime": "0",
+            "TotalMuteTime": "0.0"
+        }},
+        "body": {{"type": "script"}},
+        "file": "{input_file_name}",
+        "message": "OK",
+        "status": true,
+        "transcript": {{
+            "chunks": [
+                {{
+                    "avg_logprob": -0.1,
+                    "end_time": 0.0,
+                    "no_speech_prob": 0.0,
+                    "start_time": 0.0,
+                    "text": "<utterance_text>"
+                }}
+            ],
+            "text": "<full_transcript_with_newlines_in_[MM:SS]_-_Speaker_-_text_format>"
+        }},
+        "type": "FASTASR"
+    }},
+    "message": "Ok"
+}}
+8. For transcript.text and each chunk text, preserve the same RM/customer naming behavior from rules above (including inferred customer name).
+
+Rules for transcript values:
+1. transcript.text must contain only utterance lines in the exact format: [MM:SS] - SpeakerName - text.
+2. chunks must be chronological and aligned with transcript.text content.
+3. start_time and end_time must be in seconds (float).
+4. Compute TotalCallDuration in minutes from the final end_time, rounded to 2 decimals, and return it as a string. If no speech was detected at all, set this to "0.0".
+5. If meaningful conversation exists, set AgentAvailability to "100.0"; if the call was silent, dropped, or had no real conversation, set it to "0.0" — do not report "100.0" for a call you had to invent content for.
+
+Critical anti-repetition rules:
+1. Do not hallucinate or extend beyond what is actually spoken in the audio.
+2. Do not loop or endlessly repeat the same word/phrase/sentence.
+3. If the same sentence/phrase appears in adjacent segments due model repetition, keep it only once and merge time ranges appropriately.
+4. If a speaker genuinely repeats a word/short phrase naturally, keep only meaningful repetitions and avoid machine-like duplication.
+5. Never generate long repeated runs (for example dozens of repeated identical lines).
+
+Hard anti-loop constraints (strict):
+1. Never output the same normalized utterance text (case-insensitive, punctuation-insensitive) by the same speaker in consecutive timestamps more than once unless there is clear evidence in audio.
+2. Absolute ban: do not produce any repeated run where the same speaker line appears 3 or more times in a row.
+3. If you detect a repeated run caused by generation error, collapse it to a single line at the first valid timestamp.
+4. If audio truly contains repeated greetings (for example "hello"), keep at most two meaningful occurrences, then move forward to the next distinct spoken content.
+5. If no further distinct speech is audible, stop transcription at the last confident unique utterance. Do not continue generating filler repetitions.
+
+Quality rules:
+1. Keep punctuation natural and concise.
+2. If a small part is unclear, mark only that part as [inaudible] instead of guessing.
+3. Preserve key finance/product terms accurately (for example SIP, NAV, ETF, Nifty Next 50)."""
