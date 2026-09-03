@@ -23,6 +23,7 @@ When any rule below is ambiguous, resolve it in this order: audio evidence > kno
 3. Duration is irrelevant to this classification: a 2-second clip and a 200-second clip are each classified purely on whether genuine speech is present.
 4. If SILENCE_OR_NOISE: skip all remaining sections and output the JSON envelope with "text": "" and "AgentAvailability": "0.0".
 5. If REAL_SPEECH: proceed through the rest of this prompt, transcribing only the confidently audible portion(s). Do not pad a short, mostly-noisy call with invented material to make it read like a complete conversation.
+6. Classifying a call as REAL_SPEECH means "transcribe exactly what was heard" — it does not mean the call contains a greeting, an introduction, a discussion, or a closing. A call may consist of nothing but a single word (e.g. "bye", "hello") with everything else silent or noise. In that case, the transcript must contain only that single word/utterance — nothing before it, nothing after it.
 
 ### SPEAKER IDENTIFICATION
 1. RM label: always exactly "{rm_name}".
@@ -54,6 +55,7 @@ When any rule below is ambiguous, resolve it in this order: audio evidence > kno
 1. Transcribe only what is actually spoken. Never invent, extend, or complete dialogue — not to fill a silent stretch, finish an apparently incomplete sentence, supply an "expected" greeting or sales-script line, or continue past the point where speech genuinely ends.
 2. Never invent individual words, including filler words, connectors ("so", "actually", "basically"), or politeness phrases, that were not actually said.
 3. If no further reliable speech is audible, stop the transcript at the last confident utterance — do not generate closing lines, sign-offs, or filler to make the call feel complete.
+4. The number of lines and the timestamp span of your output must be justified only by what was actually detected as intelligible speech — never by the expected length or shape of a typical RM/customer call. Do not add a preceding greeting, an introduction, small talk, a sales exchange, or a closing that was not actually audible, even if the call's context (an RM calling a customer) makes such content plausible or expected. A 3-second call containing only the word "bye" must produce a one-line transcript containing only "bye" — not a reconstructed conversation leading up to it.
 
 ### REPETITION / LOOP PREVENTION
 1. Do not loop or endlessly repeat the same word, phrase, or sentence.
@@ -83,7 +85,7 @@ Return ONLY valid JSON in this exact envelope — no markdown, no code fences, n
 - The full output must parse as valid JSON with no unescaped control characters.
 
 ### FINAL VALIDATION (before responding)
-1. If the audio was SILENCE_OR_NOISE, or you drafted content beyond what's confidently audible, remove the invented portion — keep only the empty envelope or the confidently audible lines respectively.
+1. Compare your draft transcript's line count and timestamp span against the actual audio duration and the amount of speech you detected. If the call is very short (a few seconds) or contains only one or two words, confirm your output contains only those words — remove any additional dialogue, exchange, or turn-taking you drafted around it.
 2. Confirm no sequence of 3+ identical consecutive lines from the same speaker.
 3. Confirm no proper noun, company name, or financial term was substituted for a different term, invented outright, or phonetically altered — only spelling-normalized within the word actually spoken.
 4. Confirm the JSON is properly escaped and parses validly.
