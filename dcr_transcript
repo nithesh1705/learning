@@ -3,88 +3,88 @@ def GEMINI_TRANSCRIBE_PROMPT(rm_name, customer_name="Customer", call_type="", in
     if call_type in ["IN", "OUT"]:
         call_type_note = f" The call type is {call_type} where IN means incoming call from customer to RM and OUT means outgoing call from RM to customer."
 
-    return f"""Transcribe the given audio recording, which is a conversation between Sales RM {rm_name} from ICICI Prudential Mutual Fund and a customer.
-Known context (LABELING ONLY, see grounding rules below): Expected customer name is {customer_name}.{call_type_note}
-Known context: Input audio filename is {input_file_name}.
+    return f"""### ROLE / TASK
+You are transcribing a real audio recording of a phone call between Sales RM {rm_name} of ICICI Prudential Mutual Fund and a customer. Your only job is to report what is actually audible — never to complete, predict, or reconstruct a plausible conversation.
 
-GROUNDING RULES (highest priority, override everything else if in conflict):
-1. The RM name, expected customer name, and call type given above exist ONLY to help you label speakers correctly IF those speakers are actually present and speaking in the audio. They are NOT a script, a scenario, or a hint about what should be said.
-2. Never generate, infer, complete, or "fill in" any conversation content based on what a typical call between an RM and customer would sound like. Every single word in your output must be something you actually heard spoken in this specific audio file.
-3. If the audio is silent, contains no discernible speech, is extremely short, is mostly noise, or you are not confident real conversation is present, you MUST NOT invent a plausible-sounding call to match the expected names. In that case output only the genuinely audible fragments (even if very short), or an empty transcript if truly nothing is audible. An empty or partial transcript is always correct over a fabricated one.
-4. Before finalizing your output, check each line against this question: "Did I actually hear this, or am I completing the scene because I was told who's on this call?" If it's the latter, delete that line.
-5. Silence, dead air, or an incomplete/dropped call is a valid and expected outcome. Do not pad a short real call with extra invented dialogue to make it seem more complete.
+### INPUT CONTEXT
+- RM name (use exactly as the RM speaker label): {rm_name}
+- Expected customer name (context only — see Speaker Identification below): {customer_name}
+- {call_type_note if call_type_note else "Call direction not specified."}
+- Input audio filename: {input_file_name}
 
-Output requirements:
-1. Diarize clearly into two speakers only:
-   - RM speaker label must be exactly: {rm_name}
-   - Customer speaker label must be the detected customer name from audio.
-   - You must actively infer the customer name from how speakers address each other using honorific cues such as sir, mam, Mr, Ms, Mrs (examples: \"Mr. Akshay\", \"Ms Neha\", \"Akshay sir\", \"Neha mam\").
-   - If a customer name is found at least once, use that same name for all customer lines.
-   - Use exactly \"Customer\" only if no reliable customer name is present anywhere in the call.
-   - Name inference is for LABELING an utterance you already know was spoken — never a reason to add new utterances.
-2. Include timestamp for every utterance in chronological order.
-3. Use this exact line format for each utterance:
-    [MM:SS] - SpeakerName - text
-4. MM:SS must be based on utterance start time, zero-padded (example: 00:05, 12:47).
-5. Omit silence and non-speech sections.
-6. Output must be only in English. If speech is in another language, translate to English while preserving meaning and tone.
-7. Return ONLY valid JSON in this exact envelope shape (no markdown, no code fences, no extra keys, no additional commentary):
+### GOVERNING PRINCIPLE
+When any rule below is ambiguous, resolve it in this order: audio evidence > known context (names, filenames, expected topics) > linguistic plausibility. Known context and known terminology may guide how you spell or interpret something you already hear — they are never permission to insert, substitute, or complete something that was not actually spoken.
+
+### SPEECH PRESENCE GATE (evaluate first, before any transcription)
+1. Classify the full audio as either:
+   - REAL_SPEECH — at least one confidently intelligible word or short phrase spoken by a person, anywhere in the recording.
+   - SILENCE_OR_NOISE — dead air, line noise, hold music, static, DTMF tones, a ring/beep, or an empty/corrupted file, with no confidently intelligible speech anywhere.
+2. This is a presence check only, not a quality check: a single clear word in an otherwise noisy or silent recording is still REAL_SPEECH. Do not classify a call as SILENCE_OR_NOISE just because most of it is noisy or low-quality — that is handled later via [inaudible], not at this gate.
+3. Duration is irrelevant to this classification: a 2-second clip and a 200-second clip are each classified purely on whether genuine speech is present.
+4. If SILENCE_OR_NOISE: skip all remaining sections and output the JSON envelope with "text": "" and "AgentAvailability": "0.0".
+5. If REAL_SPEECH: proceed through the rest of this prompt, transcribing only the confidently audible portion(s). Do not pad a short, mostly-noisy call with invented material to make it read like a complete conversation.
+
+### SPEAKER IDENTIFICATION
+1. RM label: always exactly "{rm_name}".
+2. Customer label: use a detected name only if it is clearly and unambiguously spoken by someone on the call, attributed to the customer, and audible with confidence — typically via honorific cues (sir, mam, Mr, Ms, Mrs; e.g. "Mr. Akshay", "Neha mam").
+3. The supplied expected customer name ("{customer_name}") and the input filename are NOT evidence that the customer said or confirmed that name. Do not adopt a name because it matches what was expected, sounds plausible, or is mentioned by only one uncertain speaker — adopt it only because it was actually and clearly spoken.
+4. If a valid name is found, use it consistently for all customer lines. Otherwise, use exactly "Customer".
+5. If a third voice appears (IVR/auto-attendant, another RM, translator, family member), give it a descriptive label (e.g. "IVR", "Other Speaker") rather than forcing it into the RM or Customer label, and never drop or merge its lines into another speaker's.
+6. Detect speaker changes from audio cues — voice identity, pitch, tone, cadence, a pause followed by a different voice — not from what would make the conversation read most naturally. Do not merge two different speakers' turns under one label because the content flows together, and do not split one speaker's continuous turn into multiple labels without an actual audible voice change. Short backchannels from the other speaker ("okay", "hmm", "right") get their own line under their own speaker label, not absorbed into whoever is speaking at length.
+7. When overlapping speech contains independently intelligible words from both speakers, transcribe both speakers separately where possible. If a portion cannot be reliably attributed to either speaker, mark only that portion as [inaudible] — do not default to dropping or merging it into one speaker's line.
+
+### TRANSCRIPTION RULES
+1. Transcribe every genuinely intelligible utterance, in chronological order, one per line.
+2. Line format (exact, used everywhere in the output): `[MM:SS] - SpeakerName - text`
+3. Omit non-speech sections (hold music, dead air, ringing) but never let this be a reason to skip or compress real speech that occurs just before or after such a section.
+4. Use [inaudible] at the narrowest possible scope — mark only the specific unclear word or phrase, not the surrounding words you did understand. Mark an entire line [inaudible] only when nothing in that utterance can be reliably made out.
+5. Keep punctuation natural and concise.
+
+### LANGUAGE / TRANSLATION RULES
+1. Output must be entirely in English. Translate any Hindi, Hinglish, or other-language speech into English, preserving meaning and tone.
+2. Proper nouns, company names, the RM name, and financial/product terminology are never translated or phonetically transliterated. "ICICI Prudential" and "{rm_name}" always appear with this exact spelling — never a sound-alike approximation (e.g. never "I-Pro").
+3. This is spelling guidance, not license to insert terminology: only apply exact spelling to a term you are confident was actually spoken. Never add a company name, product name, or proper noun to the transcript because it's contextually expected but wasn't actually said.
+
+### FINANCIAL TERMINOLOGY RULES
+1. Preserve financial and product terms precisely: SIP, SWP, STP, NAV, AUM, NFO, ETF, ELSS, CAGR, XIRR, Nifty 50, Nifty Next 50, Sensex, and specific fund/scheme/product names.
+2. You may normalize spelling once you're confident which term was said (e.g. writing a slightly mispronounced term in its standard form) — but never substitute a different term because it seems more contextually likely (e.g. do not change a spoken "SIP" to "SWP" because a withdrawal seemed more probable given the conversation).
+3. If two such terms are acoustically similar and the audio doesn't make it clearly decidable which was said, do not guess based on context — use [inaudible] or transcribe only the confidently audible portion.
+
+### HALLUCINATION PREVENTION
+1. Transcribe only what is actually spoken. Never invent, extend, or complete dialogue — not to fill a silent stretch, finish an apparently incomplete sentence, supply an "expected" greeting or sales-script line, or continue past the point where speech genuinely ends.
+2. Never invent individual words, including filler words, connectors ("so", "actually", "basically"), or politeness phrases, that were not actually said.
+3. If no further reliable speech is audible, stop the transcript at the last confident utterance — do not generate closing lines, sign-offs, or filler to make the call feel complete.
+
+### REPETITION / LOOP PREVENTION
+1. Do not loop or endlessly repeat the same word, phrase, or sentence.
+2. If identical text from the same speaker appears in adjacent segments due to a generation artifact, keep it once and merge the time range.
+3. Preserve genuine natural repetition (e.g. a real repeated "hello") up to two meaningful occurrences, then move on — never produce 3 or more identical consecutive lines from the same speaker regardless of cause.
+
+### TIMESTAMP RULES
+1. Every utterance line includes a timestamp based on its start time, zero-padded MM:SS (e.g. 00:05, 12:47).
+2. Timestamps must progress chronologically and must not exceed the actual duration of the audio.
+
+### OUTPUT FORMAT
+Return ONLY valid JSON in this exact envelope — no markdown, no code fences, no extra keys, no commentary:
 {{
     "data": {{
-        "audio_analysis_results": {{
-            "AgentAvailability": "100.0",
-            "BlankTime": "",
-            "HoldTime": "",
-            "MuteTime": "",
-            "TotalBlankTime": "0.0",
-            "TotalCallDuration": "<duration_minutes_as_string>",
-            "TotalHoldTime": "0",
-            "TotalMuteTime": "0.0"
-        }},
-        "body": {{"type": "script"}},
-        "file": "{input_file_name}",
-        "message": "OK",
-        "status": true,
         "transcript": {{
-            "chunks": [
-                {{
-                    "avg_logprob": -0.1,
-                    "end_time": 0.0,
-                    "no_speech_prob": 0.0,
-                    "start_time": 0.0,
-                    "text": "<utterance_text>"
-                }}
-            ],
-            "text": "<full_transcript_with_newlines_in_[MM:SS]_-_Speaker_-_text_format>"
+            "text": "<transcript_lines_in_[MM:SS]_-_Speaker_-_text_format>"
         }},
-        "type": "FASTASR"
+        "audio_analysis_results": {{
+            "AgentAvailability": "<100.0_or_0.0>"
+        }}
     }},
     "message": "Ok"
 }}
-8. For transcript.text and each chunk text, preserve the same RM/customer naming behavior from rules above (including inferred customer name).
+- "text" must contain only lines in the format above, joined with escaped newlines (\\n).
+- Escape any double-quote or backslash characters occurring inside spoken text (\\" and \\\\).
+- AgentAvailability is "100.0" if the call was classified REAL_SPEECH, "0.0" if SILENCE_OR_NOISE.
+- The full output must parse as valid JSON with no unescaped control characters.
 
-Rules for transcript values:
-1. transcript.text must contain only utterance lines in the exact format: [MM:SS] - SpeakerName - text.
-2. chunks must be chronological and aligned with transcript.text content.
-3. start_time and end_time must be in seconds (float).
-4. Compute TotalCallDuration in minutes from the final end_time, rounded to 2 decimals, and return it as a string. If no speech was detected at all, set this to "0.0".
-5. If meaningful conversation exists, set AgentAvailability to "100.0"; if the call was silent, dropped, or had no real conversation, set it to "0.0" — do not report "100.0" for a call you had to invent content for.
-
-Critical anti-repetition rules:
-1. Do not hallucinate or extend beyond what is actually spoken in the audio.
-2. Do not loop or endlessly repeat the same word/phrase/sentence.
-3. If the same sentence/phrase appears in adjacent segments due model repetition, keep it only once and merge time ranges appropriately.
-4. If a speaker genuinely repeats a word/short phrase naturally, keep only meaningful repetitions and avoid machine-like duplication.
-5. Never generate long repeated runs (for example dozens of repeated identical lines).
-
-Hard anti-loop constraints (strict):
-1. Never output the same normalized utterance text (case-insensitive, punctuation-insensitive) by the same speaker in consecutive timestamps more than once unless there is clear evidence in audio.
-2. Absolute ban: do not produce any repeated run where the same speaker line appears 3 or more times in a row.
-3. If you detect a repeated run caused by generation error, collapse it to a single line at the first valid timestamp.
-4. If audio truly contains repeated greetings (for example "hello"), keep at most two meaningful occurrences, then move forward to the next distinct spoken content.
-5. If no further distinct speech is audible, stop transcription at the last confident unique utterance. Do not continue generating filler repetitions.
-
-Quality rules:
-1. Keep punctuation natural and concise.
-2. If a small part is unclear, mark only that part as [inaudible] instead of guessing.
-3. Preserve key finance/product terms accurately (for example SIP, NAV, ETF, Nifty Next 50)."""
+### FINAL VALIDATION (before responding)
+1. If the audio was SILENCE_OR_NOISE, or you drafted content beyond what's confidently audible, remove the invented portion — keep only the empty envelope or the confidently audible lines respectively.
+2. Confirm no sequence of 3+ identical consecutive lines from the same speaker.
+3. Confirm no proper noun, company name, or financial term was substituted for a different term, invented outright, or phonetically altered — only spelling-normalized within the word actually spoken.
+4. Confirm the JSON is properly escaped and parses validly.
+If any check fails, fix only the affected part — don't regenerate the whole transcript."""
