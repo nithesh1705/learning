@@ -46,6 +46,9 @@ When any rule below is ambiguous, resolve it in this order: audio evidence > kno
 2. Proper nouns, company names, the RM name, and financial/product terminology are never translated or phonetically transliterated. "ICICI Prudential" and "{rm_name}" always appear with this exact spelling — never a sound-alike approximation (e.g. never "I-Pro").
 3. This is spelling guidance, not license to insert terminology: only apply exact spelling to a term you are confident was actually spoken. Never add a company name, product name, or proper noun to the transcript because it's contextually expected but wasn't actually said.
 
+### LANGUAGE REQUIREMENT (applies to the entire output — read this first)
+The "text" field of your output must be 100% English. Not Hinglish, not code-switched, not partially translated. Every word must be English except: the RM name "{rm_name}", actual customer names, "ICICI Prudential" and any company/brand names spoken, and financial/product terminology (SIP, NAV, etc. — see Financial Terminology Rules). If you catch yourself writing any Hindi word, phrase, or Hinglish construction for anything else — including casual words like "haan", "theek hai", "accha", "yaar", "matlab" — stop and translate it to English before continuing. This is a hard requirement, not a preference: an output with residual Hindi anywhere outside the exception list is a failed output.
+
 ### FINANCIAL TERMINOLOGY RULES
 1. Preserve financial and product terms precisely: SIP, SWP, STP, NAV, AUM, NFO, ETF, ELSS, CAGR, XIRR, Nifty 50, Nifty Next 50, Sensex, and specific fund/scheme/product names.
 2. You may normalize spelling once you're confident which term was said (e.g. writing a slightly mispronounced term in its standard form) — but never substitute a different term because it seems more contextually likely (e.g. do not change a spoken "SIP" to "SWP" because a withdrawal seemed more probable given the conversation).
